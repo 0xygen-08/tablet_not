@@ -15,7 +15,7 @@
     <string name="action_search_notes">Search Notes</string>
     <string name="action_back">Back</string>
     <string name="status_stylus_ready">Stylus Ready</string>
-    <string name="status_offline_ready">Offline Ready</string>
+    <string name="status_offline_ready">Offline Queue Ready</string>
 
     <!-- Theme Names -->
     <string name="theme_stitch_charcoal">Stitch Dark (Charcoal)</string>
@@ -70,13 +70,64 @@
     <string name="editor_text_dialog_delete">Delete</string>
     <string name="editor_text_dialog_cancel">Cancel</string>
 
-    <!-- Friends & 1:1 Chat Skeleton (M4 & M5) -->
+    <!-- M4 & M5: 1:1 Chat, E2EE Encryption & Relay ("Waiting Room") -->
     <string name="chat_section_title">1:1 Chat &amp; Secure Note Relay</string>
     <string name="chat_section_subtitle">Notes are encrypted end-to-end (E2EE) and auto-deleted from the Relay server upon download or after 7 days.</string>
-    <string name="chat_placeholder_info">WhatsApp-style 1:1 messaging UI will be implemented in M4, followed by Firebase Relay &amp; E2EE in M5.</string>
+    <string name="chat_placeholder_info">WhatsApp-style 1:1 messaging UI, Firebase Relay, and E2EE encryption active.</string>
+    <string name="chat_contacts_header">Chats (1:1)</string>
+    <string name="chat_search_user_hint">Search user by email or phone…</string>
+    <string name="chat_add_contact_btn">+ Find / Add User</string>
+    <string name="chat_auth_button">Account &amp; Key</string>
+    <string name="chat_e2ee_badge">End-to-End Encrypted (AES-256-GCM • 7-Day TTL)</string>
+    <string name="chat_simulate_incoming_btn">Receive Encrypted Note (Simulate)</string>
+    <string name="chat_offline_toggle_online">Network: Online</string>
+    <string name="chat_offline_toggle_offline">Network: Offline (Test Mode)</string>
+    <string name="chat_resume_pending_btn">Resume Pending (%1$d)</string>
+    <string name="chat_composer_hint">Type a message or attach a handwritten note…</string>
+    <string name="chat_attach_note_btn">Send Note (.tnote)</string>
+    <string name="chat_send_btn">Send</string>
+    <string name="chat_note_open_in_editor">Open in Drawing Editor</string>
+    <string name="chat_note_download_decrypt">Download &amp; Decrypt</string>
+    <string name="chat_note_retry_upload">Resume / Retry Upload</string>
+    <string name="chat_relay_state_queued">Queued Offline (Waiting for Network)</string>
+    <string name="chat_relay_state_uploading">Encrypting &amp; Uploading to Relay (%1$d%%)</string>
+    <string name="chat_relay_state_interrupted">Upload Interrupted (%1$d%%) — Resumable</string>
+    <string name="chat_relay_state_waiting">In Waiting Room (Encrypted • 7-Day TTL)</string>
+    <string name="chat_relay_state_downloading">Downloading &amp; Decrypting…</string>
+    <string name="chat_relay_state_downloaded">Downloaded to Device • Deleted from Relay ✓</string>
+    <string name="chat_relay_state_expired">7 Days Expired — Auto-Deleted on Server</string>
+    <string name="chat_relay_state_too_large">File Size Limit Exceeded (Max 10 MB)</string>
+    <string name="chat_relay_state_error">Transfer Error — Tap to Retry</string>
+    <string name="chat_picker_dialog_title">Select Handwritten Note to Send</string>
+    <string name="chat_picker_simulate_oversize">Test: Send 12 MB Oversized Note (Limit Check)</string>
+    <string name="chat_error_file_too_large">This note exceeds the maximum file size limit (10 MB). Please split the note into smaller parts.</string>
+    <string name="chat_status_downloaded_deleted">Encrypted note decrypted, saved to My Notes, and permanently deleted from the Relay server.</string>
+    <string name="chat_auth_dialog_title">User Sign-In &amp; E2EE Key Identity</string>
+    <string name="chat_auth_name_label">Display Name</string>
+    <string name="chat_auth_email_phone_label">Email or Phone Number</string>
+    <string name="chat_auth_save_login">Sign In / Update</string>
+    <string name="chat_add_contact_dialog_title">Find User by Email or Phone</string>
+    <string name="chat_add_contact_name_hint">Contact Name (e.g. Alex Yılmaz)</string>
+    <string name="chat_add_contact_handle_hint">Email or Phone (e.g. alex@tablet.edu)</string>
+    <string name="chat_add_contact_confirm">Start 1:1 Chat</string>
 
-    <!-- Nearby Share Skeleton (M6) -->
+    <!-- M6: Offline Nearby Sharing (Google Nearby Connections) -->
     <string name="nearby_section_title">Offline Nearby Sharing (Nearby Connections)</string>
-    <string name="nearby_section_subtitle">Send notes directly to a nearby tablet without internet via Bluetooth + Wi-Fi Direct.</string>
-    <string name="nearby_placeholder_info">Device discovery, transfer progress UI, cancel, and retry will be implemented in M6.</string>
+    <string name="nearby_section_subtitle">Send vector notes (.tnote) directly to a nearby tablet without internet via Bluetooth + Wi-Fi Direct.</string>
+    <string name="nearby_placeholder_info">Google Nearby Connections P2P (Bluetooth + Wi-Fi Direct) ready.</string>
+    <string name="nearby_permissions_granted">Bluetooth &amp; Wi-Fi Direct Permissions Ready ✓</string>
+    <string name="nearby_permissions_missing">Bluetooth / Wi-Fi Direct permissions are required to discover nearby devices.</string>
+    <string name="nearby_grant_permissions_btn">Grant Runtime Permissions</string>
+    <string name="nearby_start_advertising_btn">Receive Mode (Advertise)</string>
+    <string name="nearby_start_discovery_btn">Scan Nearby Tablets</string>
+    <string name="nearby_stop_all_btn">Stop</string>
+    <string name="nearby_simulate_peer_btn">Simulate: Discover &amp; Send to Peer Tablet</string>
+    <string name="nearby_select_note_label">Select Note to Share:</string>
+    <string name="nearby_discovered_peers_title">Discovered Nearby Devices</string>
+    <string name="nearby_no_peers_yet">No devices found yet. Tap "Scan Nearby Tablets" or "Simulate" to test on a single emulator.</string>
+    <string name="nearby_send_to_peer_btn">Send to Tablet</string>
+    <string name="nearby_transfer_progress_title">Active Note Transfer</string>
+    <string name="nearby_cancel_transfer_btn">Cancel</string>
+    <string name="nearby_retry_transfer_btn">Retry</string>
+    <string name="nearby_simulate_receive_btn">Simulate: Receive Note from Nearby Tablet</string>
 </resources>

@@ -62,6 +62,8 @@ import com.tabletnotes.app.core.designsystem.theme.TabletNotesTheme
 import com.tabletnotes.app.core.designsystem.theme.ThemePreset
 import com.tabletnotes.app.core.designsystem.theme.toPalette
 import com.tabletnotes.app.domain.repository.NoteSummary
+import com.tabletnotes.app.feature.chat.ui.ChatScreen
+import com.tabletnotes.app.feature.chat.ui.ChatViewModel
 import com.tabletnotes.app.feature.editor.ui.NoteEditorScreen
 import com.tabletnotes.app.feature.editor.ui.NotesWorkspaceViewModel
 import com.tabletnotes.app.feature.editor.ui.formatFileSize
@@ -80,7 +82,8 @@ enum class TopTabDestination(
 fun TabletNotesShell(
     currentTheme: ThemePreset,
     onCycleTheme: () -> Unit,
-    workspaceViewModel: NotesWorkspaceViewModel = hiltViewModel()
+    workspaceViewModel: NotesWorkspaceViewModel = hiltViewModel(),
+    chatViewModel: ChatViewModel = hiltViewModel()
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(TopTabDestination.NOTES) }
     val isEditorOpen by workspaceViewModel.isEditorOpen.collectAsState()
@@ -124,11 +127,9 @@ fun TabletNotesShell(
                             onOpenNote = { noteId -> workspaceViewModel.openExistingNote(noteId) },
                             onDeleteNote = { noteId -> workspaceViewModel.deleteNote(noteId) }
                         )
-                        TopTabDestination.FRIENDS_CHAT -> MilestonePlaceholderSection(
-                            titleRes = R.string.chat_section_title,
-                            subtitleRes = R.string.chat_section_subtitle,
-                            infoRes = R.string.chat_placeholder_info,
-                            icon = Icons.Default.ChatBubbleOutline
+                        TopTabDestination.FRIENDS_CHAT -> ChatScreen(
+                            viewModel = chatViewModel,
+                            onOpenNoteInEditor = { noteId -> workspaceViewModel.openExistingNote(noteId) }
                         )
                         TopTabDestination.NEARBY_SHARE -> MilestonePlaceholderSection(
                             titleRes = R.string.nearby_section_title,

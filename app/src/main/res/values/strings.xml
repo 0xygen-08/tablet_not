@@ -15,7 +15,7 @@
     <string name="action_search_notes">Notlarda Ara</string>
     <string name="action_back">Geri</string>
     <string name="status_stylus_ready">Kalem Hazır</string>
-    <string name="status_offline_ready">Çevrimdışı Hazır</string>
+    <string name="status_offline_ready">Çevrimdışı Kuyruk Aktif</string>
 
     <!-- Tema İsimleri -->
     <string name="theme_stitch_charcoal">Stitch Koyu (Charcoal)</string>
@@ -70,13 +70,64 @@
     <string name="editor_text_dialog_delete">Sil</string>
     <string name="editor_text_dialog_cancel">İptal</string>
 
-    <!-- Arkadaşlar ve 1:1 Sohbet İskeleti (M4 & M5) -->
+    <!-- M4 & M5: 1:1 Sohbet, E2EE Şifreleme ve Relay ("Bekleme Odası") -->
     <string name="chat_section_title">1:1 Sohbet ve Güvenli Not Gönderimi</string>
     <string name="chat_section_subtitle">Notlar uçtan uca şifrelenir (E2EE), alıcı indirdiğinde veya 7 gün sonra Relay sunucusundan otomatik silinir.</string>
-    <string name="chat_placeholder_info">M4 adımında WhatsApp tarzı 1:1 mesajlaşma ekranı, M5 adımında ise Firebase Relay ve E2EE şifreleme eklenecektir.</string>
+    <string name="chat_placeholder_info">WhatsApp tarzı 1:1 mesajlaşma ekranı, Firebase Relay ve E2EE şifreleme aktif.</string>
+    <string name="chat_contacts_header">Sohbetler (1:1)</string>
+    <string name="chat_search_user_hint">E-posta veya telefon ile kişi ara…</string>
+    <string name="chat_add_contact_btn">+ Kişi Bul / Ekle</string>
+    <string name="chat_auth_button">Hesap &amp; Anahtar</string>
+    <string name="chat_e2ee_badge">Uçtan Uca Şifreli (AES-256-GCM • 7 Gün TTL)</string>
+    <string name="chat_simulate_incoming_btn">Karşıdan Şifreli Not Al (Simüle Et)</string>
+    <string name="chat_offline_toggle_online">İnternet: Bağlı</string>
+    <string name="chat_offline_toggle_offline">İnternet: Kesik (Test Modu)</string>
+    <string name="chat_resume_pending_btn">Bekleyenleri Yükle (%1$d)</string>
+    <string name="chat_composer_hint">Mesaj yazın veya el yazısı not ekleyin…</string>
+    <string name="chat_attach_note_btn">Not Gönder (.tnote)</string>
+    <string name="chat_send_btn">Gönder</string>
+    <string name="chat_note_open_in_editor">Çizim Editöründe Aç</string>
+    <string name="chat_note_download_decrypt">İndir &amp; Şifreyi Çöz</string>
+    <string name="chat_note_retry_upload">Yüklemeyi Devam Ettir / Yeniden Dene</string>
+    <string name="chat_relay_state_queued">Çevrimdışı Kuyrukta (İnternet Bekleniyor)</string>
+    <string name="chat_relay_state_uploading">Şifreleniyor &amp; Relay\'e Yükleniyor (%1$d%%)</string>
+    <string name="chat_relay_state_interrupted">Yükleme Kesildi (%1$d%%) — Devam Ettirilebilir</string>
+    <string name="chat_relay_state_waiting">Bekleme Odasında (Şifreli • 7 Gün TTL)</string>
+    <string name="chat_relay_state_downloading">İndiriliyor &amp; Şifresi Çözülüyor…</string>
+    <string name="chat_relay_state_downloaded">Cihaza İndirildi • Relay Kopyası Silindi ✓</string>
+    <string name="chat_relay_state_expired">7 Gün Doldu — Sunucudan Otomatik Silindi</string>
+    <string name="chat_relay_state_too_large">Dosya Boyutu Sınırını Aştı (Maks 10 MB)</string>
+    <string name="chat_relay_state_error">Aktarım Hatası — Yeniden Deneyin</string>
+    <string name="chat_picker_dialog_title">Gönderilecek El Yazısı Notunu Seçin</string>
+    <string name="chat_picker_simulate_oversize">Test: 12 MB Aşırı Büyük Dosya Gönder (Sınır Testi)</string>
+    <string name="chat_error_file_too_large">Bu not maksimum dosya boyutu sınırını (10 MB) aşıyor. Lütfen notu bölerek gönderin.</string>
+    <string name="chat_status_downloaded_deleted">Şifreli not çözüldü, Notlarım listesine kaydedildi ve Relay sunucusundan kalıcı olarak silindi.</string>
+    <string name="chat_auth_dialog_title">Kullanıcı Girişi &amp; E2EE Anahtar Kimliği</string>
+    <string name="chat_auth_name_label">Ad Soyad</string>
+    <string name="chat_auth_email_phone_label">E-posta veya Telefon Numarası</string>
+    <string name="chat_auth_save_login">Giriş Yap / Güncelle</string>
+    <string name="chat_add_contact_dialog_title">E-posta veya Telefon ile Kişi Ekle</string>
+    <string name="chat_add_contact_name_hint">Kişi Adı (Ör: Can Yılmaz)</string>
+    <string name="chat_add_contact_handle_hint">E-posta veya Telefon (Ör: can@tablet.edu.tr)</string>
+    <string name="chat_add_contact_confirm">Sohbet Başlat</string>
 
-    <!-- Yakın Paylaşım İskeleti (M6) -->
+    <!-- M6: Çevrimdışı Yakın Paylaşım (Google Nearby Connections) -->
     <string name="nearby_section_title">Çevrimdışı Yakın Paylaşım (Nearby Connections)</string>
-    <string name="nearby_section_subtitle">İnternet olmadan Bluetooth + Wi-Fi Direct ile yanınızdaki tablete doğrudan not gönderin.</string>
-    <string name="nearby_placeholder_info">M6 adımında cihaz tarama, gönderim yüzdesi, iptal etme ve yeniden deneme özellikleri eklenecektir.</string>
+    <string name="nearby_section_subtitle">İnternet olmadan Bluetooth + Wi-Fi Direct ile yanınızdaki tablete doğrudan vektör not (.tnote) gönderin.</string>
+    <string name="nearby_placeholder_info">Google Nearby Connections P2P (Bluetooth + Wi-Fi Direct) hazır.</string>
+    <string name="nearby_permissions_granted">Bluetooth ve Wi-Fi Direct İzinleri Hazır ✓</string>
+    <string name="nearby_permissions_missing">Yakındaki cihazları bulmak için Bluetooth / Wi-Fi Direct izni gerekiyor.</string>
+    <string name="nearby_grant_permissions_btn">Çalışma Zamanı İzinlerini Ver</string>
+    <string name="nearby_start_advertising_btn">Alıcı Ol (Görünür Yap)</string>
+    <string name="nearby_start_discovery_btn">Yakındaki Tabletleri Tara</string>
+    <string name="nearby_stop_all_btn">Durdur</string>
+    <string name="nearby_simulate_peer_btn">Simüle Et: Yakında Tablet Bul &amp; Gönder</string>
+    <string name="nearby_select_note_label">Gönderilecek Notu Seçin:</string>
+    <string name="nearby_discovered_peers_title">Bulunan Yakın Cihazlar</string>
+    <string name="nearby_no_peers_yet">Henüz cihaz bulunamadı. "Yakındaki Tabletleri Tara" veya tek tablette test için "Simüle Et" butonuna basın.</string>
+    <string name="nearby_send_to_peer_btn">Bu Tablete Gönder</string>
+    <string name="nearby_transfer_progress_title">Aktif Not Aktarımı</string>
+    <string name="nearby_cancel_transfer_btn">İptal Et</string>
+    <string name="nearby_retry_transfer_btn">Yeniden Dene</string>
+    <string name="nearby_simulate_receive_btn">Simüle Et: Yakındaki Tabletten Not Al</string>
 </resources>

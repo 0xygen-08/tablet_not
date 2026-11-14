@@ -20,3 +20,4 @@ data class NoteEntity(
     val createdAtMillis: Long,
     val updatedAtMillis: Long
 )
+

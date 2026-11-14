@@ -27,4 +27,7 @@ object DatabaseModule {
 
     @Provides
     fun provideNoteDao(database: TabletNotesDatabase): NoteDao = database.noteDao()
+
+    @Provides
+    fun provideChatDao(database: TabletNotesDatabase): ChatDao = database.chatDao()
 }
