@@ -567,3 +567,4 @@ class NoteEditorCanvasView(
         return (a shl 24) or (r shl 16) or (g shl 8) or b
     }
 }
+

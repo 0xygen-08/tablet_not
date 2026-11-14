@@ -152,3 +152,4 @@ class BitmapTileCache(
         return (tx.toLong() shl 32) or (ty.toLong() and 0xFFFFFFFFL)
     }
 }
+

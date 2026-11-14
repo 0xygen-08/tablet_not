@@ -1,17 +1,22 @@
 package com.tabletnotes.app.ui.navigation
 
+import android.graphics.BitmapFactory
 import androidx.annotation.StringRes
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -23,17 +28,20 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChatBubbleOutline
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.WifiTethering
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,16 +50,22 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.tabletnotes.app.R
 import com.tabletnotes.app.core.designsystem.components.GraphGridBackground
 import com.tabletnotes.app.core.designsystem.theme.TabletNotesTheme
 import com.tabletnotes.app.core.designsystem.theme.ThemePreset
 import com.tabletnotes.app.core.designsystem.theme.toPalette
-import com.tabletnotes.app.feature.editor.ui.NoteEditorController
+import com.tabletnotes.app.domain.repository.NoteSummary
 import com.tabletnotes.app.feature.editor.ui.NoteEditorScreen
+import com.tabletnotes.app.feature.editor.ui.NotesWorkspaceViewModel
+import com.tabletnotes.app.feature.editor.ui.formatFileSize
+import java.io.File
 
 enum class TopTabDestination(
     @StringRes val labelRes: Int,
@@ -62,26 +76,26 @@ enum class TopTabDestination(
     NEARBY_SHARE(R.string.nav_nearby_share, Icons.Default.WifiTethering)
 }
 
-/**
- * Tablet ekranları için ana uygulama kabuğu (Shell).
- * Stitch tasarımındaki üst sekmeli hap (segmented pill) navigasyonu, tema değiştiriciyi
- * ve tam ekran çok sayfalı çizim editörüne geçişi yönetir.
- */
 @Composable
 fun TabletNotesShell(
     currentTheme: ThemePreset,
-    onCycleTheme: () -> Unit
+    onCycleTheme: () -> Unit,
+    workspaceViewModel: NotesWorkspaceViewModel = hiltViewModel()
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(TopTabDestination.NOTES) }
-    var isEditorOpen by rememberSaveable { mutableStateOf(false) }
-    val editorController = remember { NoteEditorController() }
+    val isEditorOpen by workspaceViewModel.isEditorOpen.collectAsState()
+    val noteSummaries by workspaceViewModel.noteSummaries.collectAsState()
+    val autosaveStatus by workspaceViewModel.autosaveStatus.collectAsState()
+    val defaultNoteTitlePrefix = stringResource(R.string.notes_default_title_format)
 
     GraphGridBackground(modifier = Modifier.fillMaxSize()) {
         if (isEditorOpen) {
             NoteEditorScreen(
-                controller = editorController,
+                controller = workspaceViewModel.editorController,
+                autosaveStatus = autosaveStatus,
+                onRequestJsonDebug = { workspaceViewModel.buildJsonDebugSnapshot() },
                 onCycleTheme = onCycleTheme,
-                onNavigateBack = { isEditorOpen = false }
+                onNavigateBack = { workspaceViewModel.closeEditorAndSaveImmediately() }
             )
         } else {
             Column(
@@ -94,7 +108,9 @@ fun TabletNotesShell(
                     onSelectTab = { selectedTab = it },
                     currentTheme = currentTheme,
                     onCycleTheme = onCycleTheme,
-                    onNewNoteClick = { isEditorOpen = true }
+                    onNewNoteClick = {
+                        workspaceViewModel.createAndOpenNewNote(defaultNoteTitlePrefix)
+                    }
                 )
 
                 Box(
@@ -104,7 +120,9 @@ fun TabletNotesShell(
                 ) {
                     when (selectedTab) {
                         TopTabDestination.NOTES -> NotesOverviewSection(
-                            onOpenEditor = { isEditorOpen = true }
+                            notes = noteSummaries,
+                            onOpenNote = { noteId -> workspaceViewModel.openExistingNote(noteId) },
+                            onDeleteNote = { noteId -> workspaceViewModel.deleteNote(noteId) }
                         )
                         TopTabDestination.FRIENDS_CHAT -> MilestonePlaceholderSection(
                             titleRes = R.string.chat_section_title,
@@ -147,7 +165,6 @@ private fun TabletTopNavigationBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // Sol: Uygulama Başlığı ve Kalem Durum Rozeti
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -183,7 +200,6 @@ private fun TabletTopNavigationBar(
                 }
             }
 
-            // Orta: Stitch Tasarımındaki Yuvarlatılmış Hap (Segmented Pill) Navigasyonu
             Surface(
                 color = palette.appBackground,
                 shape = CircleShape,
@@ -224,7 +240,6 @@ private fun TabletTopNavigationBar(
                 }
             }
 
-            // Sağ: Tek Tıkla Tema Değiştirici ve Yeni Not Butonu
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -277,9 +292,12 @@ private fun TabletTopNavigationBar(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun NotesOverviewSection(
-    onOpenEditor: () -> Unit
+    notes: List<NoteSummary>,
+    onOpenNote: (String) -> Unit,
+    onDeleteNote: (String) -> Unit
 ) {
     val palette = TabletNotesTheme.palette
 
@@ -300,59 +318,120 @@ private fun NotesOverviewSection(
             color = palette.textMuted
         )
 
-        val sampleCards = listOf(
-            Triple(
-                R.string.notes_sample_physics_title,
-                R.string.notes_sample_physics_meta,
-                palette.inkCoralRed
-            ),
-            Triple(
-                R.string.notes_sample_calculus_title,
-                R.string.notes_sample_calculus_meta,
-                palette.inkElectricBlue
-            ),
-            Triple(
-                R.string.notes_sample_algos_title,
-                R.string.notes_sample_algos_meta,
-                palette.statusReadyEmerald
-            )
-        )
+        if (notes.isEmpty()) {
+            Surface(
+                color = palette.surfaceElevated,
+                shape = RoundedCornerShape(palette.cardCornerRadius),
+                border = BorderStroke(1.dp, palette.border),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = stringResource(R.string.notes_empty_state),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = palette.textSecondary,
+                    modifier = Modifier.padding(24.dp)
+                )
+            }
+        } else {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                maxItemsInEachRow = 3
+            ) {
+                notes.forEach { summary ->
+                    SavedNoteCard(
+                        summary = summary,
+                        onClick = { onOpenNote(summary.id) },
+                        onDelete = { onDeleteNote(summary.id) },
+                        modifier = Modifier.width(300.dp)
+                    )
+                }
+            }
+        }
+    }
+}
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+@Composable
+private fun SavedNoteCard(
+    summary: NoteSummary,
+    onClick: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val palette = TabletNotesTheme.palette
+    val thumbnailBitmap = remember(summary.thumbnailPath, summary.updatedAtMillis) {
+        val path = summary.thumbnailPath ?: return@remember null
+        val file = File(path)
+        if (file.exists()) {
+            runCatching { BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap() }.getOrNull()
+        } else {
+            null
+        }
+    }
+
+    Surface(
+        modifier = modifier
+            .clip(RoundedCornerShape(palette.cardCornerRadius))
+            .clickable(onClick = onClick),
+        color = palette.surfaceElevated,
+        shape = RoundedCornerShape(palette.cardCornerRadius),
+        border = BorderStroke(1.dp, palette.border)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            sampleCards.forEach { (titleRes, metaRes, accentColor) ->
-                Surface(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(palette.cardCornerRadius))
-                        .clickable { onOpenEditor() },
-                    color = palette.surfaceElevated,
-                    shape = RoundedCornerShape(palette.cardCornerRadius),
-                    border = BorderStroke(1.dp, palette.border)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(width = 36.dp, height = 4.dp)
-                                .clip(CircleShape)
-                                .background(accentColor)
-                        )
-                        Text(
-                            text = stringResource(titleRes),
-                            style = MaterialTheme.typography.titleMedium,
-                            color = palette.textPrimary
-                        )
-                        Text(
-                            text = stringResource(metaRes),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = palette.textMuted
-                        )
-                    }
+            // PNG Küçük Resim Önizlemesi (Thumbnail)
+            Surface(
+                color = palette.canvasBackground,
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, palette.borderSubtle),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(170.dp)
+            ) {
+                if (thumbnailBitmap != null) {
+                    Image(
+                        bitmap = thumbnailBitmap,
+                        contentDescription = summary.title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    GraphGridBackground(modifier = Modifier.fillMaxSize()) {}
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = summary.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = palette.textPrimary
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.notes_card_meta_format,
+                            summary.pageCount,
+                            summary.strokeCount,
+                            formatFileSize(summary.fileSizeBytes)
+                        ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.textMuted
+                    )
+                }
+
+                IconButton(onClick = onDelete) {
+                    Icon(
+                        imageVector = Icons.Default.DeleteOutline,
+                        contentDescription = stringResource(R.string.notes_delete_note),
+                        tint = palette.textMuted
+                    )
                 }
             }
         }

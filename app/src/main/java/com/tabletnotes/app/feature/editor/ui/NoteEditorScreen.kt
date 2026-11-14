@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Redo
@@ -29,6 +31,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoFixNormal
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.BorderColor
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Edit
@@ -63,6 +66,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.tabletnotes.app.R
 import com.tabletnotes.app.core.designsystem.theme.TabletNotesTheme
 import com.tabletnotes.app.domain.model.DrawingToolType
+import java.util.Locale
 import kotlin.math.roundToInt
 
 private val INK_COLOR_PRESETS = intArrayOf(
@@ -78,29 +82,40 @@ private val INK_COLOR_PRESETS = intArrayOf(
 private val THICKNESS_PRESETS = floatArrayOf(2.2f, 4.5f, 8.0f, 14.0f)
 
 /**
- * M2: Tam işlevsel Düşük Gecikmeli Çizim ve Çoklu Sayfa Not Editörü Ekranı.
+ * M2 & M3: Tam işlevsel Düşük Gecikmeli Çizim, Çoklu Sayfa, Atomik Otomatik Kayıt
+ * ve JSON Debug Dışa Aktarım destekli Not Editörü Ekranı.
  */
 @Composable
 fun NoteEditorScreen(
     controller: NoteEditorController,
+    autosaveStatus: AutosaveStatus,
+    onRequestJsonDebug: () -> String,
     onCycleTheme: () -> Unit,
     onNavigateBack: () -> Unit
 ) {
     val palette = TabletNotesTheme.palette
 
-    // Metin Kutusu (Text Block) ekleme/düzenleme diyaloğu durumu
+    // Metin Kutusu (Text Block) diyaloğu
     var showTextDialog by remember { mutableStateOf(false) }
     var editingTextBlockId by remember { mutableStateOf<String?>(null) }
     var pendingTextDocX by remember { mutableFloatStateOf(120f) }
     var pendingTextDocY by remember { mutableFloatStateOf(120f) }
     var pendingTextValue by remember { mutableStateOf("") }
 
+    // Başlık düzenleme diyaloğu
+    var showTitleDialog by remember { mutableStateOf(false) }
+    var pendingTitleValue by remember { mutableStateOf("") }
+
+    // JSON Debug önizleme diyaloğu
+    var showJsonDebugDialog by remember { mutableStateOf(false) }
+    var jsonDebugText by remember { mutableStateOf("") }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
     ) {
-        // 1. Üst Ana Araç Çubuğu (Geri, Araç Seçimi, Sadece Kalem Modu, Undo/Redo, Tema)
+        // 1. Üst Ana Araç Çubuğu
         Surface(
             color = palette.surface.copy(alpha = 0.96f),
             border = BorderStroke(1.dp, palette.borderSubtle),
@@ -114,7 +129,7 @@ fun NoteEditorScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // Sol: Geri Butonu ve Not Başlığı
+                // Sol: Geri Butonu, Tıklanabilir Not Başlığı ve Atomik Otomatik Kayıt Rozeti
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -140,15 +155,24 @@ fun NoteEditorScreen(
                     }
 
                     Text(
-                        text = stringResource(R.string.editor_title_placeholder),
+                        text = controller.noteTitle,
                         style = MaterialTheme.typography.titleMedium,
-                        color = palette.textPrimary
+                        color = palette.textPrimary,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                pendingTitleValue = controller.noteTitle
+                                showTitleDialog = true
+                            }
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
                     )
+
+                    AutosaveBadge(status = autosaveStatus)
                 }
 
                 Spacer(modifier = Modifier.width(12.dp))
 
-                // Orta: Çizim Araçları (Kalem, Fosforlu, Çizgi Silgisi, Metin Kutusu)
+                // Orta: Çizim Araçları
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -178,7 +202,6 @@ fun NoteEditorScreen(
                         onClick = { controller.activeTool = DrawingToolType.TEXT }
                     )
 
-                    // Sadece Kalem (Stylus Only) / Parmak + Kalem Modu Seçici
                     ToolSelectPill(
                         icon = if (controller.stylusOnlyMode) Icons.Default.Edit else Icons.Default.PanToolAlt,
                         labelRes = if (controller.stylusOnlyMode) {
@@ -190,7 +213,6 @@ fun NoteEditorScreen(
                         onClick = { controller.stylusOnlyMode = !controller.stylusOnlyMode }
                     )
 
-                    // Undo / Redo
                     IconButton(
                         onClick = { controller.undo() },
                         enabled = controller.canUndo
@@ -215,19 +237,47 @@ fun NoteEditorScreen(
 
                 Spacer(modifier = Modifier.width(12.dp))
 
-                // Sağ: Tema Değiştirici
-                OutlinedButton(
-                    onClick = onCycleTheme,
-                    shape = CircleShape,
-                    border = BorderStroke(1.dp, palette.border),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                // Sağ: JSON Debug Dışa Aktarım ve Tema Değiştirici
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Palette,
-                        contentDescription = stringResource(R.string.action_switch_theme),
-                        tint = palette.textSecondary,
-                        modifier = Modifier.size(16.dp)
-                    )
+                    OutlinedButton(
+                        onClick = {
+                            jsonDebugText = onRequestJsonDebug()
+                            showJsonDebugDialog = true
+                        },
+                        shape = CircleShape,
+                        border = BorderStroke(1.dp, palette.border),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Code,
+                            contentDescription = stringResource(R.string.editor_json_debug_btn),
+                            tint = palette.textSecondary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = stringResource(R.string.editor_json_debug_btn),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = palette.textSecondary
+                        )
+                    }
+
+                    OutlinedButton(
+                        onClick = onCycleTheme,
+                        shape = CircleShape,
+                        border = BorderStroke(1.dp, palette.border),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Palette,
+                            contentDescription = stringResource(R.string.action_switch_theme),
+                            tint = palette.textSecondary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
                 }
             }
         }
@@ -269,7 +319,6 @@ fun NoteEditorScreen(
 
                     Spacer(modifier = Modifier.width(8.dp))
 
-                    // Kalınlık Seçici (Thickness Presets)
                     THICKNESS_PRESETS.forEach { thickness ->
                         val isSelected = controller.selectedThickness == thickness
                         Surface(
@@ -305,12 +354,10 @@ fun NoteEditorScreen(
 
                 Spacer(modifier = Modifier.width(14.dp))
 
-                // Orta/Sağ: Zoom Sıfırlama, Yeni Sayfa, +10.000 Çizgi Testi, Temizle ve Canlı FPS HUD
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // Yakınlaştırma Yüzdesi (Tıklanınca %100'e sıfırlar)
                     OutlinedButton(
                         onClick = { controller.resetZoomAndPan() },
                         shape = CircleShape,
@@ -327,7 +374,6 @@ fun NoteEditorScreen(
                         )
                     }
 
-                    // + Yeni Sayfa Ekle
                     OutlinedButton(
                         onClick = { controller.addPage() },
                         shape = CircleShape,
@@ -348,7 +394,6 @@ fun NoteEditorScreen(
                         )
                     }
 
-                    // +10.000 Çizgi Performans Testi Butonu
                     OutlinedButton(
                         onClick = { controller.generateTenThousandStrokesBenchmark() },
                         shape = CircleShape,
@@ -369,7 +414,6 @@ fun NoteEditorScreen(
                         )
                     }
 
-                    // Tuvali Temizle
                     OutlinedButton(
                         onClick = { controller.clearAll() },
                         shape = CircleShape,
@@ -390,7 +434,6 @@ fun NoteEditorScreen(
                         )
                     }
 
-                    // Canlı FPS, Çizgi Sayısı ve Karo Önbelleği Rozeti
                     Surface(
                         color = palette.appBackground,
                         shape = CircleShape,
@@ -412,7 +455,7 @@ fun NoteEditorScreen(
             }
         }
 
-        // 3. Ana Düşük Gecikmeli Çizim Tuvali (AndroidView -> NoteEditorCanvasView)
+        // 3. Ana Düşük Gecikmeli Çizim Tuvali
         Box(modifier = Modifier.fillMaxSize()) {
             val revision = controller.renderRevision
             AndroidView(
@@ -422,7 +465,6 @@ fun NoteEditorScreen(
                         context = ctx,
                         controller = controller,
                         onTapForTextBlock = { docX, docY ->
-                            // Tıklanan noktada mevcut bir metin kutusu var mı kontrol et
                             val hitBlock = controller.textBlocks.firstOrNull { block ->
                                 docX in block.x..(block.x + block.width) &&
                                     docY in block.y..(block.y + 90f)
@@ -436,7 +478,6 @@ fun NoteEditorScreen(
                     )
                 },
                 update = { view ->
-                    // revision okunarak state değişimlerinde View'ın yeniden çizilmesi tetiklenir
                     if (revision >= 0) {
                         view.updatePalette(palette)
                         view.invalidate()
@@ -444,7 +485,6 @@ fun NoteEditorScreen(
                 }
             )
 
-            // Alt bilgi çubuğu: Sayfa sayısı ve kısa kullanım ipucu
             Surface(
                 color = palette.surface.copy(alpha = 0.88f),
                 shape = RoundedCornerShape(14.dp),
@@ -477,20 +517,16 @@ fun NoteEditorScreen(
         }
     }
 
-    // Metin Kutusu (Text Block) Ekleme / Düzenleme Diyaloğu
+    // Metin Kutusu Diyaloğu
     if (showTextDialog) {
         AlertDialog(
             onDismissRequest = { showTextDialog = false },
-            title = {
-                Text(text = stringResource(R.string.editor_text_dialog_title))
-            },
+            title = { Text(text = stringResource(R.string.editor_text_dialog_title)) },
             text = {
                 OutlinedTextField(
                     value = pendingTextValue,
                     onValueChange = { pendingTextValue = it },
-                    placeholder = {
-                        Text(text = stringResource(R.string.editor_text_dialog_hint))
-                    },
+                    placeholder = { Text(text = stringResource(R.string.editor_text_dialog_hint)) },
                     modifier = Modifier.fillMaxWidth()
                 )
             },
@@ -505,11 +541,7 @@ fun NoteEditorScreen(
                             colorArgb = controller.selectedColorArgb
                         )
                         showTextDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = palette.primaryAccent,
-                        contentColor = palette.onPrimaryAccent
-                    )
+                    }
                 ) {
                     Text(text = stringResource(R.string.editor_text_dialog_save))
                 }
@@ -536,6 +568,111 @@ fun NoteEditorScreen(
             }
         )
     }
+
+    // Not Başlığı Düzenleme Diyaloğu
+    if (showTitleDialog) {
+        AlertDialog(
+            onDismissRequest = { showTitleDialog = false },
+            title = { Text(text = stringResource(R.string.editor_edit_title_dialog)) },
+            text = {
+                OutlinedTextField(
+                    value = pendingTitleValue,
+                    onValueChange = { pendingTitleValue = it },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        controller.updateTitle(pendingTitleValue)
+                        showTitleDialog = false
+                    }
+                ) {
+                    Text(text = stringResource(R.string.editor_text_dialog_save))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showTitleDialog = false }) {
+                    Text(text = stringResource(R.string.editor_text_dialog_cancel))
+                }
+            }
+        )
+    }
+
+    // JSON Debug Dışa Aktarım Diyaloğu
+    if (showJsonDebugDialog) {
+        AlertDialog(
+            onDismissRequest = { showJsonDebugDialog = false },
+            title = { Text(text = stringResource(R.string.editor_json_debug_title)) },
+            text = {
+                Surface(
+                    color = palette.appBackground,
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, palette.border),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 380.dp)
+                ) {
+                    Text(
+                        text = jsonDebugText.take(6000),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.textSecondary,
+                        modifier = Modifier
+                            .verticalScroll(rememberScrollState())
+                            .padding(12.dp)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showJsonDebugDialog = false }) {
+                    Text(text = stringResource(R.string.editor_json_debug_close))
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun AutosaveBadge(status: AutosaveStatus) {
+    val palette = TabletNotesTheme.palette
+    val text = when (status) {
+        AutosaveStatus.Idle -> null
+        AutosaveStatus.Saving -> stringResource(R.string.editor_autosave_saving)
+        is AutosaveStatus.Saved -> stringResource(
+            R.string.editor_autosave_saved_format,
+            formatFileSize(status.sizeBytes)
+        )
+        AutosaveStatus.LowStorageError -> stringResource(R.string.editor_autosave_low_storage)
+    }
+    if (text != null) {
+        val color = when (status) {
+            AutosaveStatus.LowStorageError -> palette.secondaryAccent
+            is AutosaveStatus.Saved -> palette.statusReadyEmerald
+            else -> palette.textMuted
+        }
+        Surface(
+            color = palette.surfaceElevated,
+            shape = CircleShape,
+            border = BorderStroke(1.dp, palette.border)
+        ) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelSmall,
+                color = color,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+            )
+        }
+    }
+}
+
+fun formatFileSize(bytes: Long): String {
+    if (bytes <= 0L) return "0 B"
+    if (bytes < 1024L) return "$bytes B"
+    val kb = bytes / 1024.0
+    if (kb < 1024.0) return String.format(Locale.US, "%.1f KB", kb)
+    val mb = kb / 1024.0
+    return String.format(Locale.US, "%.2f MB", mb)
 }
 
 @Composable

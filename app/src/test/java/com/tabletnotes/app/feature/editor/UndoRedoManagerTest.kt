@@ -42,3 +42,4 @@ class UndoRedoManagerTest {
         assertFalse(manager.canRedo)
     }
 }
+

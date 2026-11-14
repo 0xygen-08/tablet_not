@@ -105,3 +105,4 @@ class PalmRejectionFilter(
         return InputRouteDecision.DRAW_OR_ERASE
     }
 }
+

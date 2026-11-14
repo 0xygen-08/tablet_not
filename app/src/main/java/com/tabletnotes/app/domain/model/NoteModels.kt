@@ -164,3 +164,4 @@ data class NoteDocument(
     val createdAtMillis: Long,
     val updatedAtMillis: Long
 )
+

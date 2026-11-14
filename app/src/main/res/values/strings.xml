@@ -23,19 +23,24 @@
     <string name="theme_midnight_oled">Gece Siyahı (AMOLED)</string>
     <string name="theme_current_format">Tema: %1$s</string>
 
-    <!-- Notlar Ekranı -->
+    <!-- Notlar Ekranı (M3: Gerçek Yerel Veritabanı ve .tnote Dosyaları) -->
     <string name="notes_section_title">Notlarım ve Defterler</string>
-    <string name="notes_section_subtitle">Dikey çok sayfalı vektör notlarınız cihazınızda güvenle saklanır.</string>
+    <string name="notes_section_subtitle">Tüm notlarınız cihazınızda sıkıştırılmış vektör (.tnote) formatında ve atomik kayıt güvencesiyle saklanır.</string>
     <string name="notes_open_editor_cta">Çizim Editörünü Aç</string>
+    <string name="notes_empty_state">Henüz kayıtlı bir notunuz yok. Sağ üstteki "+ Yeni Not" butonuna basarak ilk vektör notunuzu oluşturun.</string>
+    <string name="notes_card_meta_format">%1$d Sayfa • %2$d Çizgi • %3$s (.tnote v1)</string>
+    <string name="notes_delete_note">Notu Sil</string>
+    <string name="notes_default_title_format">Ders Notu #%1$d</string>
     <string name="notes_sample_physics_title">Fizik — Vektörler ve Kuvvet</string>
-    <string name="notes_sample_physics_meta">Sayfa 1/3 • Kalem + Fosforlu • Otomatik Kaydedildi</string>
+    <string name="notes_sample_physics_meta">Sayfa 1/2 • Kalem + Fosforlu • Otomatik Kaydedildi</string>
     <string name="notes_sample_calculus_title">Matematik — Türev ve İntegral</string>
     <string name="notes_sample_calculus_meta">Sayfa 1/2 • Dikey A4 • Vektör Formatı (.tnote)</string>
     <string name="notes_sample_algos_title">Veri Yapıları — Uzamsal İndeks (Quadtree)</string>
     <string name="notes_sample_algos_meta">Sayfa 1/1 • 10.000+ Çizgi Karo Önbelleği</string>
 
-    <!-- M2: Not Editörü ve Performans Motoru -->
+    <!-- M2 & M3: Not Editörü, Performans Motoru ve Otomatik Kayıt -->
     <string name="editor_title_placeholder">Fizik — Vektörler ve Kuvvet</string>
+    <string name="editor_edit_title_dialog">Not Başlığını Düzenle</string>
     <string name="editor_tool_pen">Kalem</string>
     <string name="editor_tool_highlighter">Fosforlu</string>
     <string name="editor_tool_eraser">Çizgi Silgisi</string>
@@ -50,7 +55,13 @@
     <string name="editor_stress_test_10k">+10.000 Çizgi Testi</string>
     <string name="editor_clear_canvas">Temizle</string>
     <string name="editor_perf_hud_format">%1$d FPS • %2$d Çizgi • %3$d Karo Önbellekte</string>
-    <string name="editor_stylus_hint">İpucu: Çizmek için kalemi (veya fareyi) sürükleyin. Yakınlaştırmak/kaydırmak için iki parmak kullanın (veya Sadece Kalem modunu açıp tek parmakla kaydırın).</string>
+    <string name="editor_stylus_hint">İpucu: Çizmek için kalemi (veya fareyi) sürükleyin. Tüm değişiklikler atomik olarak (.tmp -> .tnote) otomatik kaydedilir.</string>
+    <string name="editor_autosave_saving">Kaydediliyor…</string>
+    <string name="editor_autosave_saved_format">Otomatik Kaydedildi (%1$s)</string>
+    <string name="editor_autosave_low_storage">Depolama alanı yetersiz! Kayıt yapılamadı.</string>
+    <string name="editor_json_debug_btn">JSON Debug</string>
+    <string name="editor_json_debug_title">Vektör Not Formatı — JSON Debug &amp; Binary Özeti</string>
+    <string name="editor_json_debug_close">Kapat</string>
 
     <!-- Metin Kutusu (Text Block) Diyaloğu -->
     <string name="editor_text_dialog_title">Metin Kutusu Ekle / Düzenle</string>

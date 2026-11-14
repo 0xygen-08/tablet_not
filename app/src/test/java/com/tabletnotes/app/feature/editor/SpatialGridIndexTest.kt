@@ -78,3 +78,4 @@ class SpatialGridIndexTest {
         assertEquals("target", hits.first().id)
     }
 }
+

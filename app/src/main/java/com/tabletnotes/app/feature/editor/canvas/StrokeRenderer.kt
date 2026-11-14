@@ -173,3 +173,4 @@ object StrokeRenderer {
         outPath.lineTo(last.x, last.y)
     }
 }
+

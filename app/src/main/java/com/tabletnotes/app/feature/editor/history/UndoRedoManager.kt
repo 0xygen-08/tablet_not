@@ -59,3 +59,4 @@ class UndoRedoManager(
         redoStack.clear()
     }
 }
+
