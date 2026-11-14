@@ -111,7 +111,9 @@ class HybridFirebaseRelayStorage(
     }
 
     private fun isFirebaseConfigured(): Boolean {
-        return runCatching { FirebaseApp.getInstance() != null }.getOrDefault(false)
+        return runCatching {
+            FirebaseApp.getInstance().name.isNotEmpty()
+        }.getOrDefault(false)
     }
 
     override suspend fun uploadEncryptedNote(

@@ -53,21 +53,20 @@ class HybridAuthService @Inject constructor(
 
         // Firebase yapılandırılmışsa kullanıcı profilini ve E2EE Açık Anahtarını Firestore'a yayınla
         runCatching {
-            if (FirebaseApp.getInstance() != null) {
-                val firebaseUid = FirebaseAuth.getInstance().currentUser?.uid ?: updated.uid
-                FirebaseFirestore.getInstance()
-                    .collection("users")
-                    .document(firebaseUid)
-                    .set(
-                        mapOf(
-                            "uid" to firebaseUid,
-                            "displayName" to updated.displayName,
-                            "emailOrPhone" to updated.emailOrPhone,
-                            "publicKeyBase64" to updated.publicKeyBase64,
-                            "keyFingerprint" to updated.keyFingerprint
-                        )
+            FirebaseApp.getInstance()
+            val firebaseUid = FirebaseAuth.getInstance().currentUser?.uid ?: updated.uid
+            FirebaseFirestore.getInstance()
+                .collection("users")
+                .document(firebaseUid)
+                .set(
+                    mapOf(
+                        "uid" to firebaseUid,
+                        "displayName" to updated.displayName,
+                        "emailOrPhone" to updated.emailOrPhone,
+                        "publicKeyBase64" to updated.publicKeyBase64,
+                        "keyFingerprint" to updated.keyFingerprint
                     )
-            }
+                )
         }
 
         _currentUser.value = updated
