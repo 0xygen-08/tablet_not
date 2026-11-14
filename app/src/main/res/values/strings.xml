@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Uygulama Genel -->
+    <string name="app_name">Not Defteri</string>
+    <string name="app_subtitle">Tablet El Yazısı ve Güvenli Not Paylaşımı</string>
+
+    <!-- Üst Sekme Navigasyonu (Stitch Tasarımı) -->
+    <string name="nav_notes">Notlar</string>
+    <string name="nav_friends_chat">Arkadaşlar</string>
+    <string name="nav_nearby_share">Yakın Paylaşım</string>
+
+    <!-- Üst Çubuk Eylemleri -->
+    <string name="action_new_note">Yeni Not</string>
+    <string name="action_switch_theme">Temayı Değiştir</string>
+    <string name="action_search_notes">Notlarda Ara</string>
+    <string name="action_back">Geri</string>
+    <string name="status_stylus_ready">Kalem Hazır</string>
+    <string name="status_offline_ready">Çevrimdışı Hazır</string>
+
+    <!-- Tema İsimleri -->
+    <string name="theme_stitch_charcoal">Stitch Koyu (Charcoal)</string>
+    <string name="theme_warm_paper">Sıcak Kağıt (Açık)</string>
+    <string name="theme_midnight_oled">Gece Siyahı (AMOLED)</string>
+    <string name="theme_current_format">Tema: %1$s</string>
+
+    <!-- Notlar Ekranı (M1 İskeleti -> M2/M3'te tam işlevsel) -->
+    <string name="notes_section_title">Notlarım ve Defterler</string>
+    <string name="notes_section_subtitle">Dikey çok sayfalı vektör notlarınız cihazınızda güvenle saklanır.</string>
+    <string name="notes_open_editor_cta">Çizim Editörünü Aç (M2 Alanı)</string>
+    <string name="notes_sample_physics_title">Fizik — Vektörler ve Kuvvet</string>
+    <string name="notes_sample_physics_meta">Sayfa 1/3 • Kalem + Fosforlu • Otomatik Kaydedildi</string>
+    <string name="notes_sample_calculus_title">Matematik — Türev ve İntegral</string>
+    <string name="notes_sample_calculus_meta">Sayfa 1/2 • Dikey A4 • Vektör Formatı (.tnote)</string>
+    <string name="notes_sample_algos_title">Veri Yapıları — Uzamsal İndeks (Quadtree)</string>
+    <string name="notes_sample_algos_meta">Sayfa 1/1 • 10.000+ Çizgi Karo Önbelleği</string>
+
+    <!-- Not Editörü İskeleti (M2'de Düşük Gecikmeli Çizim Motoru Eklenecek) -->
+    <string name="editor_title_placeholder">Başlıksız Not — Sayfa 1</string>
+    <string name="editor_tool_pen">Kalem</string>
+    <string name="editor_tool_highlighter">Fosforlu</string>
+    <string name="editor_tool_eraser">Çizgi Silgisi</string>
+    <string name="editor_tool_text">Metin Kutusu</string>
+    <string name="editor_tool_stylus_only">Sadece Kalem</string>
+    <string name="editor_tool_undo">Geri Al</string>
+    <string name="editor_tool_redo">İleri Al</string>
+    <string name="editor_add_page">+ Yeni Sayfa Ekle</string>
+    <string name="editor_m1_preview_banner">M1 Kurulumu Tamamlandı • Düşük gecikmeli çizim motoru ve 10.000+ çizgi karo önbelleği M2 adımında bu tuvale bağlanacak.</string>
+
+    <!-- Arkadaşlar ve 1:1 Sohbet İskeleti (M4 & M5) -->
+    <string name="chat_section_title">1:1 Sohbet ve Güvenli Not Gönderimi</string>
+    <string name="chat_section_subtitle">Notlar uçtan uca şifrelenir (E2EE), alıcı indirdiğinde veya 7 gün sonra Relay sunucusundan otomatik silinir.</string>
+    <string name="chat_placeholder_info">M4 adımında WhatsApp tarzı 1:1 mesajlaşma ekranı, M5 adımında ise Firebase Relay ve E2EE şifreleme eklenecektir.</string>
+
+    <!-- Yakın Paylaşım İskeleti (M6) -->
+    <string name="nearby_section_title">Çevrimdışı Yakın Paylaşım (Nearby Connections)</string>
+    <string name="nearby_section_subtitle">İnternet olmadan Bluetooth + Wi-Fi Direct ile yanınızdaki tablete doğrudan not gönderin.</string>
+    <string name="nearby_placeholder_info">M6 adımında cihaz tarama, gönderim yüzdesi, iptal etme ve yeniden deneme özellikleri eklenecektir.</string>
+</resources>
