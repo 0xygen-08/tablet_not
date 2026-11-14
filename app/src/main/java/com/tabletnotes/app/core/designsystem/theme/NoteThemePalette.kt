@@ -161,3 +161,4 @@ fun ThemePreset.toPalette(): NoteThemePalette = when (this) {
 }
 
 val LocalNoteThemePalette = staticCompositionLocalOf { StitchCharcoalPalette }
+

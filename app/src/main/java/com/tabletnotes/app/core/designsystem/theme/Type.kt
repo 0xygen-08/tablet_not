@@ -56,3 +56,4 @@ val TabletNotesTypography = Typography(
         lineHeight = 14.sp
     )
 )
+

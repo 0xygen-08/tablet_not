@@ -28,3 +28,4 @@ class ThemePresetTest {
         assertTrue(ThemePreset.MIDNIGHT_OLED.toPalette().isDark)
     }
 }
+

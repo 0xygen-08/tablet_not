@@ -36,3 +36,4 @@ object CoroutineDispatchersModule {
     @MainDispatcher
     fun provideMainDispatcher(): CoroutineDispatcher = Dispatchers.Main.immediate
 }
+

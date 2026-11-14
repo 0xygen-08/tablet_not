@@ -56,3 +56,4 @@
     <string name="nearby_section_subtitle">Send notes directly to a nearby tablet without internet via Bluetooth + Wi-Fi Direct.</string>
     <string name="nearby_placeholder_info">Device discovery, transfer progress UI, cancel, and retry will be implemented in M6.</string>
 </resources>
+

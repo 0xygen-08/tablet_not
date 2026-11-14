@@ -22,3 +22,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "TabletNotes"
 include(":app")
+

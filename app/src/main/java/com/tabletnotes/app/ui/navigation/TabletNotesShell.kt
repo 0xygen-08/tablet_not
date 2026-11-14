@@ -599,3 +599,4 @@ private fun MilestonePlaceholderSection(
         }
     }
 }
+

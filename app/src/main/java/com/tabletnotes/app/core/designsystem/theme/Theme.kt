@@ -72,3 +72,4 @@ object TabletNotesTheme {
         @ReadOnlyComposable
         get() = LocalNoteThemePalette.current
 }
+
