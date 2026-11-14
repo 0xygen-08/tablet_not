@@ -67,6 +67,8 @@ import com.tabletnotes.app.feature.chat.ui.ChatViewModel
 import com.tabletnotes.app.feature.editor.ui.NoteEditorScreen
 import com.tabletnotes.app.feature.editor.ui.NotesWorkspaceViewModel
 import com.tabletnotes.app.feature.editor.ui.formatFileSize
+import com.tabletnotes.app.feature.nearby.ui.NearbyShareScreen
+import com.tabletnotes.app.feature.nearby.ui.NearbyShareViewModel
 import java.io.File
 
 enum class TopTabDestination(
@@ -83,7 +85,8 @@ fun TabletNotesShell(
     currentTheme: ThemePreset,
     onCycleTheme: () -> Unit,
     workspaceViewModel: NotesWorkspaceViewModel = hiltViewModel(),
-    chatViewModel: ChatViewModel = hiltViewModel()
+    chatViewModel: ChatViewModel = hiltViewModel(),
+    nearbyViewModel: NearbyShareViewModel = hiltViewModel()
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(TopTabDestination.NOTES) }
     val isEditorOpen by workspaceViewModel.isEditorOpen.collectAsState()
@@ -131,11 +134,9 @@ fun TabletNotesShell(
                             viewModel = chatViewModel,
                             onOpenNoteInEditor = { noteId -> workspaceViewModel.openExistingNote(noteId) }
                         )
-                        TopTabDestination.NEARBY_SHARE -> MilestonePlaceholderSection(
-                            titleRes = R.string.nearby_section_title,
-                            subtitleRes = R.string.nearby_section_subtitle,
-                            infoRes = R.string.nearby_placeholder_info,
-                            icon = Icons.Default.WifiTethering
+                        TopTabDestination.NEARBY_SHARE -> NearbyShareScreen(
+                            viewModel = nearbyViewModel,
+                            onOpenNoteInEditor = { noteId -> workspaceViewModel.openExistingNote(noteId) }
                         )
                     }
                 }

@@ -216,3 +216,4 @@ object StorageAndRepositoryModule {
         impl: OfflineFirstNoteRepository
     ): NoteRepository = impl
 }
+

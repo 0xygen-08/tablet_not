@@ -107,3 +107,4 @@ class AtomicNoteFileStore(
         return rawId.replace(Regex("[^a-zA-Z0-9_-]"), "_")
     }
 }
+

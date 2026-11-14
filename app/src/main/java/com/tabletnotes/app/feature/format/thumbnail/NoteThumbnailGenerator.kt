@@ -98,3 +98,4 @@ object NoteThumbnailGenerator {
         return out.toByteArray()
     }
 }
+

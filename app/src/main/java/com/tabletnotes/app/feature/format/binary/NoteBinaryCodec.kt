@@ -379,3 +379,4 @@ object NoteBinaryCodec {
         }
     }
 }
+

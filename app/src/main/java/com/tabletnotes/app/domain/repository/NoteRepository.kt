@@ -28,3 +28,4 @@ interface NoteRepository {
     suspend fun deleteNote(noteId: String)
     suspend fun ensureSampleNotesSeeded()
 }
+
