@@ -1,0 +1,18 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Şifreli Not Relay Deposu (/relay_notes/{recipientId}/{fileName})
+    // 1. Maksimum dosya boyutu: 10 MB (10 * 1024 * 1024 bayt)
+    // 2. Okuma ve indirme sonrası silme: Yalnızca alıcıya (recipientId == request.auth.uid) izin verilir.
+    match /relay_notes/{recipientId}/{fileName} {
+      allow create, update: if request.auth != null
+                            && request.resource.size <= 10 * 1024 * 1024
+                            && request.resource.contentType == 'application/octet-stream';
+
+      allow read, delete: if request.auth != null
+                          && (request.auth.uid == recipientId
+                              || resource.metadata.senderId == request.auth.uid);
+    }
+  }
+}
