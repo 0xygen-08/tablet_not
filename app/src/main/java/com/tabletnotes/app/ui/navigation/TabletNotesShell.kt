@@ -12,28 +12,19 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Redo
-import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AutoFixNormal
-import androidx.compose.material.icons.filled.BorderColor
 import androidx.compose.material.icons.filled.ChatBubbleOutline
-import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.WifiTethering
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -44,8 +35,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -59,6 +50,8 @@ import com.tabletnotes.app.core.designsystem.components.GraphGridBackground
 import com.tabletnotes.app.core.designsystem.theme.TabletNotesTheme
 import com.tabletnotes.app.core.designsystem.theme.ThemePreset
 import com.tabletnotes.app.core.designsystem.theme.toPalette
+import com.tabletnotes.app.feature.editor.ui.NoteEditorController
+import com.tabletnotes.app.feature.editor.ui.NoteEditorScreen
 
 enum class TopTabDestination(
     @StringRes val labelRes: Int,
@@ -79,14 +72,14 @@ fun TabletNotesShell(
     currentTheme: ThemePreset,
     onCycleTheme: () -> Unit
 ) {
-    val palette = TabletNotesTheme.palette
     var selectedTab by rememberSaveable { mutableStateOf(TopTabDestination.NOTES) }
     var isEditorOpen by rememberSaveable { mutableStateOf(false) }
+    val editorController = remember { NoteEditorController() }
 
     GraphGridBackground(modifier = Modifier.fillMaxSize()) {
         if (isEditorOpen) {
-            NoteEditorPreviewScaffold(
-                currentTheme = currentTheme,
+            NoteEditorScreen(
+                controller = editorController,
                 onCycleTheme = onCycleTheme,
                 onNavigateBack = { isEditorOpen = false }
             )
@@ -366,196 +359,6 @@ private fun NotesOverviewSection(
     }
 }
 
-/**
- * M2'de düşük gecikmeli çizim motorunun bağlanacağı Dikey Çoklu Sayfa Editör İskeleti.
- */
-@Composable
-private fun NoteEditorPreviewScaffold(
-    currentTheme: ThemePreset,
-    onCycleTheme: () -> Unit,
-    onNavigateBack: () -> Unit
-) {
-    val palette = TabletNotesTheme.palette
-    var pageCount by rememberSaveable { mutableIntStateOf(1) }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-    ) {
-        // Üst Editör Araç Çubuğu
-        Surface(
-            color = palette.surface.copy(alpha = 0.95f),
-            border = BorderStroke(1.dp, palette.borderSubtle),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = onNavigateBack,
-                        shape = CircleShape,
-                        border = BorderStroke(1.dp, palette.border),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.action_back),
-                            tint = palette.textPrimary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = stringResource(R.string.action_back),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = palette.textPrimary
-                        )
-                    }
-
-                    Text(
-                        text = stringResource(R.string.editor_title_placeholder),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = palette.textPrimary
-                    )
-                }
-
-                // Çizim Araçları (M2'de aktif çizim motoruna bağlanacak)
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    EditorToolPill(icon = Icons.Default.Create, labelRes = R.string.editor_tool_pen, isActive = true)
-                    EditorToolPill(icon = Icons.Default.BorderColor, labelRes = R.string.editor_tool_highlighter, isActive = false)
-                    EditorToolPill(icon = Icons.Default.AutoFixNormal, labelRes = R.string.editor_tool_eraser, isActive = false)
-                    EditorToolPill(icon = Icons.Default.TextFields, labelRes = R.string.editor_tool_text, isActive = false)
-                    EditorToolPill(icon = Icons.AutoMirrored.Filled.Undo, labelRes = R.string.editor_tool_undo, isActive = false)
-                    EditorToolPill(icon = Icons.AutoMirrored.Filled.Redo, labelRes = R.string.editor_tool_redo, isActive = false)
-                }
-
-                OutlinedButton(
-                    onClick = onCycleTheme,
-                    shape = CircleShape,
-                    border = BorderStroke(1.dp, palette.border),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Palette,
-                        contentDescription = stringResource(R.string.action_switch_theme),
-                        tint = palette.textSecondary,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-            }
-        }
-
-        // Dikey Çoklu Sayfa Alanı (A4 / Tablet Oranlı Sayfalar)
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(vertical = 20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(24.dp)
-        ) {
-            Surface(
-                color = palette.surfaceElevated,
-                shape = RoundedCornerShape(palette.cardCornerRadius),
-                border = BorderStroke(1.dp, palette.primaryAccent.copy(alpha = 0.5f)),
-                modifier = Modifier
-                    .widthIn(max = 820.dp)
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
-            ) {
-                Text(
-                    text = stringResource(R.string.editor_m1_preview_banner),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = palette.textSecondary,
-                    modifier = Modifier.padding(16.dp)
-                )
-            }
-
-            for (pageIndex in 1..pageCount) {
-                Surface(
-                    color = palette.canvasBackground.copy(alpha = 0.85f),
-                    shape = RoundedCornerShape(palette.cardCornerRadius),
-                    border = BorderStroke(1.dp, palette.border),
-                    modifier = Modifier
-                        .widthIn(max = 820.dp)
-                        .fillMaxWidth()
-                        .height(640.dp)
-                        .padding(horizontal = 24.dp)
-                ) {
-                    GraphGridBackground(modifier = Modifier.fillMaxSize()) {
-                        Text(
-                            text = "#$pageIndex",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = palette.textMuted,
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(16.dp)
-                        )
-                    }
-                }
-            }
-
-            OutlinedButton(
-                onClick = { pageCount++ },
-                shape = CircleShape,
-                border = BorderStroke(1.dp, palette.border)
-            ) {
-                Text(
-                    text = stringResource(R.string.editor_add_page),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = palette.textPrimary
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun EditorToolPill(
-    icon: ImageVector,
-    @StringRes labelRes: Int,
-    isActive: Boolean
-) {
-    val palette = TabletNotesTheme.palette
-    val containerColor = if (isActive) palette.primaryAccent else palette.surfaceElevated
-    val contentColor = if (isActive) palette.onPrimaryAccent else palette.textSecondary
-
-    Surface(
-        color = containerColor,
-        shape = CircleShape,
-        border = BorderStroke(1.dp, if (isActive) palette.primaryAccent else palette.border)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = stringResource(labelRes),
-                tint = contentColor,
-                modifier = Modifier.size(15.dp)
-            )
-            Text(
-                text = stringResource(labelRes),
-                style = MaterialTheme.typography.labelMedium,
-                color = contentColor
-            )
-        }
-    }
-}
-
 @Composable
 private fun MilestonePlaceholderSection(
     @StringRes titleRes: Int,
@@ -599,4 +402,3 @@ private fun MilestonePlaceholderSection(
         }
     }
 }
-

@@ -23,10 +23,10 @@
     <string name="theme_midnight_oled">Gece Siyahı (AMOLED)</string>
     <string name="theme_current_format">Tema: %1$s</string>
 
-    <!-- Notlar Ekranı (M1 İskeleti -> M2/M3'te tam işlevsel) -->
+    <!-- Notlar Ekranı -->
     <string name="notes_section_title">Notlarım ve Defterler</string>
     <string name="notes_section_subtitle">Dikey çok sayfalı vektör notlarınız cihazınızda güvenle saklanır.</string>
-    <string name="notes_open_editor_cta">Çizim Editörünü Aç (M2 Alanı)</string>
+    <string name="notes_open_editor_cta">Çizim Editörünü Aç</string>
     <string name="notes_sample_physics_title">Fizik — Vektörler ve Kuvvet</string>
     <string name="notes_sample_physics_meta">Sayfa 1/3 • Kalem + Fosforlu • Otomatik Kaydedildi</string>
     <string name="notes_sample_calculus_title">Matematik — Türev ve İntegral</string>
@@ -34,17 +34,30 @@
     <string name="notes_sample_algos_title">Veri Yapıları — Uzamsal İndeks (Quadtree)</string>
     <string name="notes_sample_algos_meta">Sayfa 1/1 • 10.000+ Çizgi Karo Önbelleği</string>
 
-    <!-- Not Editörü İskeleti (M2'de Düşük Gecikmeli Çizim Motoru Eklenecek) -->
-    <string name="editor_title_placeholder">Başlıksız Not — Sayfa 1</string>
+    <!-- M2: Not Editörü ve Performans Motoru -->
+    <string name="editor_title_placeholder">Fizik — Vektörler ve Kuvvet</string>
     <string name="editor_tool_pen">Kalem</string>
     <string name="editor_tool_highlighter">Fosforlu</string>
     <string name="editor_tool_eraser">Çizgi Silgisi</string>
-    <string name="editor_tool_text">Metin Kutusu</string>
+    <string name="editor_tool_text">Metin</string>
     <string name="editor_tool_stylus_only">Sadece Kalem</string>
+    <string name="editor_tool_finger_draw">Parmak + Kalem</string>
     <string name="editor_tool_undo">Geri Al</string>
     <string name="editor_tool_redo">İleri Al</string>
     <string name="editor_add_page">+ Yeni Sayfa Ekle</string>
-    <string name="editor_m1_preview_banner">M1 Kurulumu Tamamlandı • Düşük gecikmeli çizim motoru ve 10.000+ çizgi karo önbelleği M2 adımında bu tuvale bağlanacak.</string>
+    <string name="editor_page_badge">Sayfa %1$d / %2$d</string>
+    <string name="editor_zoom_reset"> Yakınlaştırma: %1$d%% (Sıfırla)</string>
+    <string name="editor_stress_test_10k">+10.000 Çizgi Testi</string>
+    <string name="editor_clear_canvas">Temizle</string>
+    <string name="editor_perf_hud_format">%1$d FPS • %2$d Çizgi • %3$d Karo Önbellekte</string>
+    <string name="editor_stylus_hint">İpucu: Çizmek için kalemi (veya fareyi) sürükleyin. Yakınlaştırmak/kaydırmak için iki parmak kullanın (veya Sadece Kalem modunu açıp tek parmakla kaydırın).</string>
+
+    <!-- Metin Kutusu (Text Block) Diyaloğu -->
+    <string name="editor_text_dialog_title">Metin Kutusu Ekle / Düzenle</string>
+    <string name="editor_text_dialog_hint">Not metninizi buraya yazın…</string>
+    <string name="editor_text_dialog_save">Kaydet</string>
+    <string name="editor_text_dialog_delete">Sil</string>
+    <string name="editor_text_dialog_cancel">İptal</string>
 
     <!-- Arkadaşlar ve 1:1 Sohbet İskeleti (M4 & M5) -->
     <string name="chat_section_title">1:1 Sohbet ve Güvenli Not Gönderimi</string>
@@ -56,4 +69,3 @@
     <string name="nearby_section_subtitle">İnternet olmadan Bluetooth + Wi-Fi Direct ile yanınızdaki tablete doğrudan not gönderin.</string>
     <string name="nearby_placeholder_info">M6 adımında cihaz tarama, gönderim yüzdesi, iptal etme ve yeniden deneme özellikleri eklenecektir.</string>
 </resources>
-
