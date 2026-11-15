@@ -106,7 +106,7 @@ class NoteEditorController(
             id = noteId,
             title = noteTitle,
             pages = pages,
-            strokes = spatialIndex.getAllStrokes(),
+            strokes = spatialIndex.getAllStrokes().filterNot { it.id.startsWith("bench_") },
             textBlocks = textBlocks,
             createdAtMillis = createdAtMillis,
             updatedAtMillis = nowMillis
@@ -352,7 +352,7 @@ class NoteEditorController(
         spatialIndex.insertAll(generated)
         tileCache.clearAll()
         undoRedoManager.record(EditorCommand.BatchAddStrokes(generated))
-        syncCounters(notifyMutation = true)
+        syncCounters(notifyMutation = false)
     }
 
     private fun syncCounters(notifyMutation: Boolean) {

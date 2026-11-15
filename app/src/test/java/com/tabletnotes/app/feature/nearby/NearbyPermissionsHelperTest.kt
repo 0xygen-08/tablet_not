@@ -36,3 +36,4 @@ class NearbyPermissionsHelperTest {
         assertTrue(permsApi33.contains(Manifest.permission.NEARBY_WIFI_DEVICES))
     }
 }
+

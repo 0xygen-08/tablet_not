@@ -18,3 +18,4 @@ abstract class NearbyModule {
         impl: GoogleNearbyConnectionsManager
     ): NearbyTransferManager
 }
+

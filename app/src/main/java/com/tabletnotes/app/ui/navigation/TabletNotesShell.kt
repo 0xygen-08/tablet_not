@@ -1,6 +1,7 @@
 package com.tabletnotes.app.ui.navigation
 
 import android.graphics.BitmapFactory
+import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -26,6 +27,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.DeleteOutline
@@ -93,6 +95,10 @@ fun TabletNotesShell(
     val noteSummaries by workspaceViewModel.noteSummaries.collectAsState()
     val autosaveStatus by workspaceViewModel.autosaveStatus.collectAsState()
     val defaultNoteTitlePrefix = stringResource(R.string.notes_default_title_format)
+
+    BackHandler(enabled = !isEditorOpen && selectedTab != TopTabDestination.NOTES) {
+        selectedTab = TopTabDestination.NOTES
+    }
 
     GraphGridBackground(modifier = Modifier.fillMaxSize()) {
         if (isEditorOpen) {
@@ -171,6 +177,32 @@ private fun TabletTopNavigationBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                if (selectedTab != TopTabDestination.NOTES) {
+                    Button(
+                        onClick = { onSelectTab(TopTabDestination.NOTES) },
+                        shape = CircleShape,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = palette.surfaceElevated,
+                            contentColor = palette.textPrimary
+                        ),
+                        border = BorderStroke(1.dp, palette.border),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.action_back),
+                            tint = palette.textPrimary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(R.string.action_back),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = palette.textPrimary
+                        )
+                    }
+                }
+
                 Text(
                     text = stringResource(R.string.app_name),
                     style = MaterialTheme.typography.titleLarge,

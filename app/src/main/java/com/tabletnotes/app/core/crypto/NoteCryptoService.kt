@@ -246,3 +246,4 @@ class TinkHybridNoteCryptoService @Inject constructor() : CryptoService {
         return digest.joinToString("") { "%02x".format(it) }
     }
 }
+

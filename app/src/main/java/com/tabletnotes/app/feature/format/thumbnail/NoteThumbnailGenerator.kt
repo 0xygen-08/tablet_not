@@ -69,10 +69,13 @@ object NoteThumbnailGenerator {
             y += step
         }
 
-        // 1. sayfadaki çizgileri çiz
+        // 1. sayfadaki çizgileri çiz (10.000+ çizgili stres testlerinde önizleme üretiminin anında bitmesi için ilk 600 çizgi ile sınırla)
+        var drawnCount = 0
         for (stroke in document.strokes) {
             if (stroke.pageIndex == 0 || stroke.bounds.minY <= pageHeight) {
                 StrokeRenderer.drawStroke(canvas, stroke)
+                drawnCount++
+                if (drawnCount >= 600) break
             }
         }
 

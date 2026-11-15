@@ -66,3 +66,4 @@ class AndroidConnectivityObserver @Inject constructor(
         return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 }
+

@@ -80,3 +80,4 @@ class NearbyShareViewModel @Inject constructor(
         nearbyTransferManager.retryLastTransfer()
     }
 }
+

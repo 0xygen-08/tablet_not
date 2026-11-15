@@ -85,7 +85,26 @@ class OfflineFirstNoteRepository @Inject constructor(
 
     override suspend fun ensureSampleNotesSeeded() = withContext(ioDispatcher) {
         val existing = noteDao.getAllNotesOnce()
-        if (existing.isNotEmpty()) return@withContext
+        if (existing.isNotEmpty()) {
+            // Eğer örnek notta önceki stres testinden kalan 10.000+ sentetik "bench_" çizgisi varsa temizle
+            for (entity in existing) {
+                if (entity.strokeCount > 5_000) {
+                    val doc = loadNoteDocument(entity.id)
+                    if (doc != null) {
+                        val cleanedStrokes = doc.strokes.filterNot { it.id.startsWith("bench_") }
+                        if (cleanedStrokes.size != doc.strokes.size) {
+                            saveNoteDocumentAtomically(
+                                doc.copy(
+                                    pages = doc.pages.take(2).ifEmpty { listOf(NotePage(0)) },
+                                    strokes = cleanedStrokes
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+            return@withContext
+        }
 
         val now = System.currentTimeMillis()
         val physicsDoc = createSamplePhysicsNote(now)

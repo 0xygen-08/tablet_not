@@ -1,5 +1,6 @@
 package com.tabletnotes.app.feature.editor.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -110,12 +111,14 @@ fun NoteEditorScreen(
     var showJsonDebugDialog by remember { mutableStateOf(false) }
     var jsonDebugText by remember { mutableStateOf("") }
 
+    BackHandler(onBack = onNavigateBack)
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
     ) {
-        // 1. Üst Ana Araç Çubuğu
+        // 1. Üst Ana Araç Çubuğu (Geri butonu sol köşede sabit, orta/sağ araçlar kaydırılabilir)
         Surface(
             color = palette.surface.copy(alpha = 0.96f),
             border = BorderStroke(1.dp, palette.borderSubtle),
@@ -124,51 +127,63 @@ fun NoteEditorScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // Sol: Geri Butonu, Tıklanabilir Not Başlığı ve Atomik Otomatik Kayıt Rozeti
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                // Sol Sabit Alan: Geri Butonu (horizontalScroll dışında olduğu için fare/kalem kaymasından etkilenmez)
+                Button(
+                    onClick = onNavigateBack,
+                    shape = CircleShape,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = palette.surfaceElevated,
+                        contentColor = palette.textPrimary
+                    ),
+                    border = BorderStroke(1.dp, palette.border),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
                 ) {
-                    OutlinedButton(
-                        onClick = onNavigateBack,
-                        shape = CircleShape,
-                        border = BorderStroke(1.dp, palette.border),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.action_back),
-                            tint = palette.textPrimary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = stringResource(R.string.action_back),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = palette.textPrimary
-                        )
-                    }
-
-                    Text(
-                        text = controller.noteTitle,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = palette.textPrimary,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable {
-                                pendingTitleValue = controller.noteTitle
-                                showTitleDialog = true
-                            }
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = stringResource(R.string.action_back),
+                        tint = palette.textPrimary,
+                        modifier = Modifier.size(18.dp)
                     )
-
-                    AutosaveBadge(status = autosaveStatus)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = stringResource(R.string.action_back),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = palette.textPrimary
+                    )
                 }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // Kaydırılabilir Orta ve Sağ Araçlar
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .horizontalScroll(rememberScrollState()),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = controller.noteTitle,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = palette.textPrimary,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    pendingTitleValue = controller.noteTitle
+                                    showTitleDialog = true
+                                }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+
+                        AutosaveBadge(status = autosaveStatus)
+                    }
 
                 Spacer(modifier = Modifier.width(12.dp))
 
@@ -237,46 +252,47 @@ fun NoteEditorScreen(
 
                 Spacer(modifier = Modifier.width(12.dp))
 
-                // Sağ: JSON Debug Dışa Aktarım ve Tema Değiştirici
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = {
-                            jsonDebugText = onRequestJsonDebug()
-                            showJsonDebugDialog = true
-                        },
-                        shape = CircleShape,
-                        border = BorderStroke(1.dp, palette.border),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    // Sağ: JSON Debug Dışa Aktarım ve Tema Değiştirici
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Code,
-                            contentDescription = stringResource(R.string.editor_json_debug_btn),
-                            tint = palette.textSecondary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = stringResource(R.string.editor_json_debug_btn),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = palette.textSecondary
-                        )
-                    }
+                        OutlinedButton(
+                            onClick = {
+                                jsonDebugText = onRequestJsonDebug()
+                                showJsonDebugDialog = true
+                            },
+                            shape = CircleShape,
+                            border = BorderStroke(1.dp, palette.border),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Code,
+                                contentDescription = stringResource(R.string.editor_json_debug_btn),
+                                tint = palette.textSecondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = stringResource(R.string.editor_json_debug_btn),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = palette.textSecondary
+                            )
+                        }
 
-                    OutlinedButton(
-                        onClick = onCycleTheme,
-                        shape = CircleShape,
-                        border = BorderStroke(1.dp, palette.border),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Palette,
-                            contentDescription = stringResource(R.string.action_switch_theme),
-                            tint = palette.textSecondary,
-                            modifier = Modifier.size(16.dp)
-                        )
+                        OutlinedButton(
+                            onClick = onCycleTheme,
+                            shape = CircleShape,
+                            border = BorderStroke(1.dp, palette.border),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Palette,
+                                contentDescription = stringResource(R.string.action_switch_theme),
+                                tint = palette.textSecondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -478,10 +494,7 @@ fun NoteEditorScreen(
                     )
                 },
                 update = { view ->
-                    if (revision >= 0) {
-                        view.updatePalette(palette)
-                        view.invalidate()
-                    }
+                    view.syncState(revision = revision, palette = palette)
                 }
             )
 

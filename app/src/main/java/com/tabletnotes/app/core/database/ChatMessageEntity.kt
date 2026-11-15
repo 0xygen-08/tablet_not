@@ -96,3 +96,4 @@ data class ChatMessageEntity(
         }
     }
 }
+

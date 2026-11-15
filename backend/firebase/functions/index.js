@@ -40,3 +40,4 @@ exports.purgeExpiredRelayNotes = onSchedule("every 6 hours", async () => {
   await Promise.all(storageDeletePromises);
   await batch.commit();
 });
+

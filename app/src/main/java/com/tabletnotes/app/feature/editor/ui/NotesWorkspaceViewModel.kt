@@ -91,9 +91,18 @@ class NotesWorkspaceViewModel @Inject constructor(
 
     fun closeEditorAndSaveImmediately() {
         autosaveJob?.cancel()
+        val snapshot = editorController.toNoteDocument()
+        // Geri tuşuna basıldığı anda beklemeden anında Notlar ekranına dön (0 ms gecikme)
+        _isEditorOpen.value = false
         viewModelScope.launch {
-            performImmediateAutosave()
-            _isEditorOpen.value = false
+            try {
+                val savedSummary = noteRepository.saveNoteDocumentAtomically(snapshot)
+                _autosaveStatus.value = AutosaveStatus.Saved(savedSummary.fileSizeBytes)
+            } catch (_: LowStorageException) {
+                _autosaveStatus.value = AutosaveStatus.LowStorageError
+            } catch (_: Exception) {
+                _autosaveStatus.value = AutosaveStatus.Idle
+            }
         }
     }
 

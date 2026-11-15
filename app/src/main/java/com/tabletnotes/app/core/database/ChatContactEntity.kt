@@ -30,3 +30,4 @@ data class ChatContactEntity(
 
     private fun emailOrHandle(): String = handleOrEmail
 }
+

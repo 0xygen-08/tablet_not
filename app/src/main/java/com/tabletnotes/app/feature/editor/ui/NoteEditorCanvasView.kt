@@ -42,6 +42,8 @@ class NoteEditorCanvasView(
     private val inkEngine = LowLatencyInkEngine(this)
 
     private var themePalette: NoteThemePalette? = null
+    private var appliedRevision: Int = -1
+    private var lastHudUpdateNano: Long = 0L
 
     // Aktif çizilmekte olan çizgi ("Wet Ink")
     private val activeRealPoints = ArrayList<StrokePoint>(256)
@@ -131,9 +133,17 @@ class NoteEditorCanvasView(
         setLayerType(LAYER_TYPE_HARDWARE, null)
     }
 
-    fun updatePalette(palette: NoteThemePalette) {
+    fun syncState(revision: Int, palette: NoteThemePalette) {
+        var changed = false
         if (themePalette != palette) {
             themePalette = palette
+            changed = true
+        }
+        if (appliedRevision != revision) {
+            appliedRevision = revision
+            changed = true
+        }
+        if (changed) {
             invalidate()
         }
     }
@@ -526,6 +536,7 @@ class NoteEditorCanvasView(
     }
 
     private fun measureFrameFps() {
+        if (!isStrokeInFlight && !isPanning && !isEraserActive) return
         val now = System.nanoTime()
         if (lastFrameNano != 0L) {
             val dtMs = (now - lastFrameNano) / 1_000_000f
@@ -535,10 +546,14 @@ class NoteEditorCanvasView(
             }
         }
         lastFrameNano = now
-        controller.updateFps(
-            fps = smoothedFps.roundToInt().coerceIn(30, 120),
-            tiles = controller.tileCache.cachedTileCount
-        )
+        if (now - lastHudUpdateNano >= 500_000_000L) {
+            lastHudUpdateNano = now
+            val roundedFps = smoothedFps.roundToInt().coerceIn(30, 120)
+            val tiles = controller.tileCache.cachedTileCount
+            post {
+                controller.updateFps(fps = roundedFps, tiles = tiles)
+            }
+        }
     }
 
     private fun screenToDocX(screenX: Float): Float =

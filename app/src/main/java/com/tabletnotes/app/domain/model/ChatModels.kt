@@ -64,3 +64,4 @@ data class ChatMessage(
     val relayState: RelayTransferState = RelayTransferState.NONE,
     val noteAttachment: NoteAttachmentMeta? = null
 )
+
