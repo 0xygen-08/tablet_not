@@ -16,6 +16,8 @@ import com.tabletnotes.app.domain.model.NoteAttachmentMeta
 import com.tabletnotes.app.domain.model.NoteDocument
 import com.tabletnotes.app.domain.model.NotePage
 import com.tabletnotes.app.domain.model.NoteStroke
+import com.tabletnotes.app.domain.model.PaperColor
+import com.tabletnotes.app.domain.model.PaperTemplate
 import com.tabletnotes.app.domain.model.RelayTransferState
 import com.tabletnotes.app.domain.model.StrokePoint
 import com.tabletnotes.app.domain.model.TextBlock
@@ -61,7 +63,7 @@ class ChatViewModel @Inject constructor(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
-    private val _selectedContactId = MutableStateFlow<String?>(null)
+    private val _selectedContactId = MutableStateFlow<String?>("contact_ahmet")
     val selectedContactId: StateFlow<String?> = _selectedContactId.asStateFlow()
 
     private val _bannerMessage = MutableStateFlow<String?>(null)
@@ -81,7 +83,8 @@ class ChatViewModel @Inject constructor(
             val q = query.trim().lowercase()
             list.filter {
                 it.displayName.lowercase().contains(q) ||
-                    it.handleOrEmail.lowercase().contains(q)
+                    it.handleOrEmail.lowercase().contains(q) ||
+                    it.lastMessagePreview.lowercase().contains(q)
             }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -102,7 +105,6 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch(ioDispatcher) {
             seedInitialContactsAndMessagesIfEmpty()
         }
-        // İnternet bağlantısı geri geldiğinde bekleyen (QUEUED_OFFLINE / UPLOAD_INTERRUPTED) notları otomatik devam ettir
         viewModelScope.launch(ioDispatcher) {
             connectivityObserver.isOnline.collect { online ->
                 if (online) {
@@ -116,7 +118,7 @@ class ChatViewModel @Inject constructor(
         _searchQuery.value = query
     }
 
-    fun selectContact(contactId: String) {
+    fun selectContact(contactId: String?) {
         _selectedContactId.value = contactId
     }
 
@@ -135,17 +137,17 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    fun addOrFindContact(displayName: String, handleOrEmail: String) {
+    fun addOrFindContact(displayName: String, handleOrEmail: String, isGroup: Boolean = false) {
         val cleanName = displayName.trim().ifBlank { return }
-        val cleanHandle = handleOrEmail.trim().ifBlank { return }
+        val cleanHandle = handleOrEmail.trim().ifBlank { if (isGroup) "grup@tablet.edu.tr" else "kullanici@tablet.edu.tr" }
         viewModelScope.launch(ioDispatcher) {
             val contactKey = cryptoService.generateIdentityKeyBundle()
-            val id = "contact_${UUID.randomUUID().toString().take(8)}"
-            val initials = cleanName.split(" ")
-                .mapNotNull { it.firstOrNull()?.uppercaseChar() }
-                .take(2)
-                .joinToString("")
-                .ifBlank { "KT" }
+            val id = if (isGroup) {
+                "group_${UUID.randomUUID().toString().take(8)}"
+            } else {
+                "contact_${UUID.randomUUID().toString().take(8)}"
+            }
+            val initials = cleanName.firstOrNull()?.uppercaseChar()?.toString() ?: "A"
 
             val entity = ChatContactEntity(
                 id = id,
@@ -153,10 +155,11 @@ class ChatViewModel @Inject constructor(
                 handleOrEmail = cleanHandle,
                 avatarInitials = initials,
                 publicKeyBase64 = contactKey.publicKeyBase64,
-                lastMessagePreview = "Uçtan uca şifreli sohbet başlatıldı",
+                lastMessagePreview = if (isGroup) "Çalışma grubu oluşturuldu" else "Uçtan uca şifreli sohbet başlatıldı",
                 lastMessageTimeMillis = System.currentTimeMillis(),
                 unreadCount = 0,
-                isOnline = true
+                isOnline = true,
+                isGroup = isGroup
             )
             chatDao.upsertContact(entity)
             _selectedContactId.value = id
@@ -187,12 +190,13 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Seçilen yerel `.tnote` dosyasını alıcının Açık Anahtarı ile uçtan uca şifreler (AES-256-GCM + ECIES),
-     * Relay ("bekleme odası") sunucusuna yükler ve alıcı için mesaj kaydı oluşturur.
-     */
-    fun sendNoteAttachment(noteSummary: NoteSummary, simulateOversizedFile: Boolean = false) {
-        val contactId = _selectedContactId.value ?: return
+    fun sendNoteAttachment(
+        noteSummary: NoteSummary,
+        targetContactId: String? = null,
+        simulateOversizedFile: Boolean = false
+    ) {
+        val contactId = targetContactId ?: _selectedContactId.value ?: return
+        _selectedContactId.value = contactId
         viewModelScope.launch(ioDispatcher) {
             val contact = chatDao.getContactById(contactId) ?: return@launch
             val me = authService.currentUser.value
@@ -200,13 +204,11 @@ class ChatViewModel @Inject constructor(
 
             val doc = noteRepository.loadNoteDocument(noteSummary.id) ?: return@launch
             val plainBytes = if (simulateOversizedFile) {
-                // 10 MB sınırı test etmek için 12 MB boyutunda test verisi
                 ByteArray(12 * 1024 * 1024)
             } else {
                 NoteBinaryCodec.encode(doc, compress = true)
             }
 
-            // Cihaz üzerinde Uçtan Uca Şifreleme (E2EE)
             val encryptedPkg = cryptoService.encryptNoteForRecipient(
                 plainNoteBytes = plainBytes,
                 recipientPublicKeyBase64 = contact.publicKeyBase64
@@ -252,7 +254,7 @@ class ChatViewModel @Inject constructor(
             chatDao.updateContactLastMessage(contactId, "📎 ${noteSummary.title}", now)
 
             if (!connectivityObserver.isOnline.value) {
-                _bannerMessage.value = "İnternet yok: '${noteSummary.title}' çevrimdışı kuyruğa alındı. Bağlantı geldiğinde otomatik yüklenecek."
+                _bannerMessage.value = "'${noteSummary.title}' çevrimdışı kuyruğa alındı. Bağlantı geldiğinde otomatik yüklenecek."
                 return@launch
             }
 
@@ -268,9 +270,6 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Kesilen veya çevrimdışı kuyrukta bekleyen tüm not gönderimlerini kaldığı yerden devam ettirir.
-     */
     fun resumeAllPendingOutboxUploads() {
         viewModelScope.launch(ioDispatcher) {
             val pending = chatDao.getPendingOutboxMessages()
@@ -353,7 +352,7 @@ class ChatViewModel @Inject constructor(
                 progress = 0
             )
             _bannerMessage.value =
-                "Hata: Dosya boyutu (${tooLarge.actualBytes / (1024 * 1024)} MB) izin verilen 10 MB sınırını aşıyor!"
+                "Dosya boyutu (${tooLarge.actualBytes / (1024 * 1024)} MB) izin verilen 10 MB sınırını aşıyor."
         } catch (e: Exception) {
             val interruptedState = if (!connectivityObserver.isOnline.value) {
                 RelayTransferState.UPLOAD_INTERRUPTED
@@ -369,11 +368,6 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Alıcıya gelen şifreli notu Relay ("bekleme odası") sunucusundan indirir,
-     * alıcının Özel Anahtarı (`privateKeyBase64`) ile şifresini çözer, yerel depolamaya
-     * atomik olarak kaydeder ve ardından Relay üzerindeki kopyayı kalıcı olarak siler.
-     */
     fun downloadAndDecryptNoteMessage(
         message: ChatMessage,
         onDecryptedNoteReady: ((String) -> Unit)? = null
@@ -391,24 +385,20 @@ class ChatViewModel @Inject constructor(
                 val me = authService.currentUser.value
                 val myKeys = authService.getLocalIdentityKeyBundle()
 
-                // 1. Şifreli paketi Relay'den indir
                 val bundle = relayStorage.downloadEncryptedNote(
                     relayObjectId = relayObjectId,
                     requestingUserId = me.uid
                 )
 
-                // 2. Cihazda şifreyi çöz (AES-256-GCM + ECIES)
                 val decryptedBytes = cryptoService.decryptNoteForRecipient(
                     cipherBytes = bundle.cipherBytes,
                     encryptedKeyEnvelopeBase64 = bundle.encryptedKeyEnvelopeBase64,
                     recipientPrivateKeyBase64 = myKeys.privateKeyBase64
                 )
 
-                // 3. Vektör notu (.tnote) çöz ve yerel depolamaya atomik olarak kaydet
                 val decodedDoc = NoteBinaryCodec.decode(decryptedBytes)
                 val savedSummary = noteRepository.saveNoteDocumentAtomically(decodedDoc)
 
-                // 4. Doğrulanan indirme sonrası Relay kopyasını sunucudan kalıcı olarak sil!
                 relayStorage.confirmDownloadAndDeleteRelayCopy(
                     relayObjectId = relayObjectId,
                     requestingUserId = me.uid
@@ -430,7 +420,7 @@ class ChatViewModel @Inject constructor(
                 }
 
                 _bannerMessage.value =
-                    "✓ '${savedSummary.title}' indirildi, şifresi çözüldü ve Relay sunucusundan silindi!"
+                    "✓ '${savedSummary.title}' indirildi ve Notlarım listesine kaydedildi!"
                 onDecryptedNoteReady?.invoke(savedSummary.id)
             } catch (e: Exception) {
                 chatDao.updateMessageRelayState(
@@ -442,10 +432,6 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Tek tablet/emülatör üzerinde test kolaylığı için: Seçili kişiden mevcut kullanıcıya
-     * uçtan uca şifrelenmiş yeni bir el yazısı `.tnote` notu gönderilmesini simüle eder.
-     */
     fun simulateIncomingEncryptedNote() {
         val contactId = _selectedContactId.value ?: return
         viewModelScope.launch(ioDispatcher) {
@@ -459,7 +445,6 @@ class ChatViewModel @Inject constructor(
             )
             val plainBytes = NoteBinaryCodec.encode(incomingDoc, compress = true)
 
-            // Gönderici, notu BİZİM (alıcının) Açık Anahtarımızla şifreler
             val encryptedPkg = cryptoService.encryptNoteForRecipient(
                 plainNoteBytes = plainBytes,
                 recipientPublicKeyBase64 = me.publicKeyBase64
@@ -479,7 +464,7 @@ class ChatViewModel @Inject constructor(
                 recipientId = me.uid,
                 isOutgoing = false,
                 type = ChatMessageType.NOTE_ATTACHMENT,
-                textContent = "📥 Şifreli El Yazısı Notu: ${incomingDoc.title}",
+                textContent = "📥 El Yazısı Notu: ${incomingDoc.title}",
                 timestampMillis = now,
                 relayState = RelayTransferState.WAITING_IN_RELAY,
                 noteAttachment = NoteAttachmentMeta(
@@ -497,91 +482,133 @@ class ChatViewModel @Inject constructor(
                 )
             )
             chatDao.upsertMessage(ChatMessageEntity.fromDomainModel(msg))
-            chatDao.updateContactLastMessage(contact.id, "📥 Şifreli Not: ${incomingDoc.title}", now)
+            chatDao.updateContactLastMessage(contact.id, "📥 ${incomingDoc.title}", now)
         }
     }
 
     private suspend fun seedInitialContactsAndMessagesIfEmpty() {
         noteRepository.ensureSampleNotesSeeded()
         if (chatDao.getContactCount() > 0) {
-            val firstList = chatDao.observeContacts()
             return
         }
 
         val now = System.currentTimeMillis()
         val me = authService.currentUser.value
 
-        val elifKey = cryptoService.generateIdentityKeyBundle()
-        val mertKey = cryptoService.generateIdentityKeyBundle()
-        val zeynepKey = cryptoService.generateIdentityKeyBundle()
+        val ahmetKey = cryptoService.generateIdentityKeyBundle()
+        val mehmetKey = cryptoService.generateIdentityKeyBundle()
+        val aliKey = cryptoService.generateIdentityKeyBundle()
+        val grpFizikKey = cryptoService.generateIdentityKeyBundle()
+        val grpMatKey = cryptoService.generateIdentityKeyBundle()
+        val grpKimyaKey = cryptoService.generateIdentityKeyBundle()
 
+        // Taslak 2. Ekrandaki Kişiler (Ahmet, Mehmet, Ali) + Çalışma Grupları
         val contactsToSeed = listOf(
             ChatContactEntity(
-                id = "contact_elif",
-                displayName = "Elif Kaya",
-                handleOrEmail = "elif.kaya@fizik.edu.tr",
-                avatarInitials = "EK",
-                publicKeyBase64 = elifKey.publicKeyBase64,
-                lastMessagePreview = "📥 Şifreli Not: Elektromanyetik Dalga Özeti",
-                lastMessageTimeMillis = now - 120_000L,
-                unreadCount = 1,
-                isOnline = true
+                id = "contact_ahmet",
+                displayName = "Ahmet",
+                handleOrEmail = "ahmet@fizik.edu.tr",
+                avatarInitials = "A",
+                publicKeyBase64 = ahmetKey.publicKeyBase64,
+                lastMessagePreview = "Burada son atılan mesaj olacak",
+                lastMessageTimeMillis = now - 86_400_000L, // Dün
+                unreadCount = 2,
+                isOnline = true,
+                isGroup = false
             ),
             ChatContactEntity(
-                id = "contact_mert",
-                displayName = "Mert Demir",
-                handleOrEmail = "+90 532 410 20 30",
-                avatarInitials = "MD",
-                publicKeyBase64 = mertKey.publicKeyBase64,
-                lastMessagePreview = "Türev notunu aldım, çizimler çok net!",
+                id = "contact_mehmet",
+                displayName = "Mehmet",
+                handleOrEmail = "mehmet@muhendislik.edu.tr",
+                avatarInitials = "M",
+                publicKeyBase64 = mehmetKey.publicKeyBase64,
+                lastMessagePreview = "Hocam bana son dersteki notu atsana",
+                lastMessageTimeMillis = now - 7 * 86_400_000L,
+                unreadCount = 0,
+                isOnline = true,
+                isGroup = false
+            ),
+            ChatContactEntity(
+                id = "contact_ali",
+                displayName = "Ali",
+                handleOrEmail = "ali@matematik.edu.tr",
+                avatarInitials = "A",
+                publicKeyBase64 = aliKey.publicKeyBase64,
+                lastMessagePreview = "Matematik ders notları",
+                lastMessageTimeMillis = now - 14 * 86_400_000L,
+                unreadCount = 0,
+                isOnline = false,
+                isGroup = false
+            ),
+            // Gruplar Sekmesi için Örnek Çalışma Grupları
+            ChatContactEntity(
+                id = "group_physics_101",
+                displayName = "Fizik — Vektörler Çalışma Grubu",
+                handleOrEmail = "12 Üye • Fizik Bölümü",
+                avatarInitials = "F",
+                publicKeyBase64 = grpFizikKey.publicKeyBase64,
+                lastMessagePreview = "Ahmet: Vektörler ders notunu gruba attım",
                 lastMessageTimeMillis = now - 3_600_000L,
-                unreadCount = 0,
-                isOnline = true
+                unreadCount = 2,
+                isOnline = true,
+                isGroup = true
             ),
             ChatContactEntity(
-                id = "contact_zeynep",
-                displayName = "Zeynep Arslan",
-                handleOrEmail = "zeynep@algoritma.org",
-                avatarInitials = "ZA",
-                publicKeyBase64 = zeynepKey.publicKeyBase64,
-                lastMessagePreview = "Quadtree uzamsal indeks diyagramını paylaşabilir misin?",
-                lastMessageTimeMillis = now - 7_200_000L,
+                id = "group_math_calculus",
+                displayName = "Matematik — Türev & İntegral",
+                handleOrEmail = "18 Üye • Matematik",
+                avatarInitials = "M",
+                publicKeyBase64 = grpMatKey.publicKeyBase64,
+                lastMessagePreview = "Mehmet: Türev fasikül özetini paylaştı",
+                lastMessageTimeMillis = now - 86_400_000L,
                 unreadCount = 0,
-                isOnline = false
+                isOnline = true,
+                isGroup = true
+            ),
+            ChatContactEntity(
+                id = "group_chemistry_lab",
+                displayName = "Kimya Laboratuvarı",
+                handleOrEmail = "9 Üye • Organik Kimya",
+                avatarInitials = "K",
+                publicKeyBase64 = grpKimyaKey.publicKeyBase64,
+                lastMessagePreview = "Deney 4 organik bileşikler raporu eklendi",
+                lastMessageTimeMillis = now - 4 * 86_400_000L,
+                unreadCount = 0,
+                isOnline = true,
+                isGroup = true
             )
         )
         chatDao.upsertContacts(contactsToSeed)
-        _selectedContactId.value = "contact_elif"
+        _selectedContactId.value = "contact_ahmet"
 
-        // Elif ile örnek 1:1 sohbet mesajları + Bekleme odasında indirilmeye hazır gerçek bir E2EE şifreli not!
+        // Ahmet ile örnek sohbet + Bekleme odasında indirilmeye hazır gerçek bir E2EE şifreli el yazısı notu!
         val msg1 = ChatMessage(
             id = "seed_msg_1",
-            contactId = "contact_elif",
-            senderId = "contact_elif",
+            contactId = "contact_ahmet",
+            senderId = "contact_ahmet",
             recipientId = me.uid,
             isOutgoing = false,
             type = ChatMessageType.TEXT,
-            textContent = "Selam! Bugünkü laboratuvar dersinde çizdiğim elektromanyetik dalga notunu şifreli olarak gönderiyorum.",
+            textContent = "Selam! Bugünkü Fizik dersinde çizdiğim Elektromanyetik Dalga ve Vektör özetini şifreli olarak gönderiyorum.",
             timestampMillis = now - 300_000L
         )
         val msg2 = ChatMessage(
             id = "seed_msg_2",
-            contactId = "contact_elif",
+            contactId = "contact_ahmet",
             senderId = me.uid,
-            recipientId = "contact_elif",
+            recipientId = "contact_ahmet",
             isOutgoing = true,
             type = ChatMessageType.TEXT,
-            textContent = "Harika, hemen indirip kendi tabletimde üzerine ekleme yapacağım.",
+            textContent = "Harika, hemen indirip tabletimde üzerine kendi notlarımı ekleyeceğim.",
             timestampMillis = now - 240_000L
         )
         chatDao.upsertMessage(ChatMessageEntity.fromDomainModel(msg1))
         chatDao.upsertMessage(ChatMessageEntity.fromDomainModel(msg2))
 
-        // Gerçek şifreli .tnote paketini Relay bekleme odasına koy
         val incomingDoc = createIncomingHandwrittenNoteDocument(
-            senderName = "Elif Kaya",
+            senderName = "Ahmet",
             timestampMillis = now - 120_000L,
-            customTitle = "Elektromanyetik Dalga Özeti (Elif)"
+            customTitle = "Elektromanyetik Dalga Özeti (Ahmet)"
         )
         val plainBytes = NoteBinaryCodec.encode(incomingDoc, compress = true)
         val encryptedPkg = cryptoService.encryptNoteForRecipient(
@@ -589,7 +616,7 @@ class ChatViewModel @Inject constructor(
             recipientPublicKeyBase64 = me.publicKeyBase64
         )
         val receipt = relayStorage.uploadEncryptedNote(
-            senderId = "contact_elif",
+            senderId = "contact_ahmet",
             recipientId = me.uid,
             cipherBytes = encryptedPkg.cipherBytes,
             encryptedKeyEnvelopeBase64 = encryptedPkg.encryptedKeyEnvelopeBase64
@@ -597,12 +624,12 @@ class ChatViewModel @Inject constructor(
 
         val msg3 = ChatMessage(
             id = "seed_msg_3",
-            contactId = "contact_elif",
-            senderId = "contact_elif",
+            contactId = "contact_ahmet",
+            senderId = "contact_ahmet",
             recipientId = me.uid,
             isOutgoing = false,
             type = ChatMessageType.NOTE_ATTACHMENT,
-            textContent = "📥 Şifreli El Yazısı Notu: ${incomingDoc.title}",
+            textContent = "📥 El Yazısı Notu: ${incomingDoc.title}",
             timestampMillis = now - 120_000L,
             relayState = RelayTransferState.WAITING_IN_RELAY,
             noteAttachment = NoteAttachmentMeta(
@@ -620,6 +647,50 @@ class ChatViewModel @Inject constructor(
             )
         )
         chatDao.upsertMessage(ChatMessageEntity.fromDomainModel(msg3))
+
+        // Mehmet ve Ali için örnek mesajlar
+        chatDao.upsertMessage(
+            ChatMessageEntity.fromDomainModel(
+                ChatMessage(
+                    id = "seed_mehmet_1",
+                    contactId = "contact_mehmet",
+                    senderId = "contact_mehmet",
+                    recipientId = me.uid,
+                    isOutgoing = false,
+                    type = ChatMessageType.TEXT,
+                    textContent = "Hocam bana son dersteki notu atsana",
+                    timestampMillis = now - 7 * 86_400_000L
+                )
+            )
+        )
+        chatDao.upsertMessage(
+            ChatMessageEntity.fromDomainModel(
+                ChatMessage(
+                    id = "seed_ali_1",
+                    contactId = "contact_ali",
+                    senderId = "contact_ali",
+                    recipientId = me.uid,
+                    isOutgoing = false,
+                    type = ChatMessageType.TEXT,
+                    textContent = "Matematik ders notları",
+                    timestampMillis = now - 14 * 86_400_000L
+                )
+            )
+        )
+        chatDao.upsertMessage(
+            ChatMessageEntity.fromDomainModel(
+                ChatMessage(
+                    id = "seed_grp_1",
+                    contactId = "group_physics_101",
+                    senderId = "contact_ahmet",
+                    recipientId = "group_physics_101",
+                    isOutgoing = false,
+                    type = ChatMessageType.TEXT,
+                    textContent = "Ahmet: Vektörler ders notunu gruba attım, inceleyebilirsiniz.",
+                    timestampMillis = now - 3_600_000L
+                )
+            )
+        )
     }
 
     private fun createIncomingHandwrittenNoteDocument(
@@ -643,37 +714,28 @@ class ChatViewModel @Inject constructor(
             StrokePoint(x = 90f, y = 320f, pressure = 0.6f, timestampMillis = timestampMillis),
             StrokePoint(x = 780f, y = 320f, pressure = 0.65f, timestampMillis = timestampMillis + 20L)
         )
-        val highlightPoints = listOf(
-            StrokePoint(x = 120f, y = 180f, pressure = 0.5f, timestampMillis = timestampMillis + 40L),
-            StrokePoint(x = 540f, y = 180f, pressure = 0.5f, timestampMillis = timestampMillis + 60L)
-        )
 
         return NoteDocument(
             id = "shared_${UUID.randomUUID().toString().take(8)}",
-            title = customTitle ?: "$senderName — Paylaşılan El Yazısı Notu",
-            pages = listOf(NotePage(pageIndex = 0, widthPt = 960f, heightPt = 1280f)),
+            title = customTitle ?: "$senderName — Paylaşılan Not",
+            courseName = "Fizik",
+            paperColor = PaperColor.CREAM,
+            paperTemplate = PaperTemplate.DOTTED,
+            pages = listOf(NotePage(pageIndex = 0, widthPt = 900f, heightPt = 1200f)),
             strokes = listOf(
-                NoteStroke(
-                    id = "st_hl",
-                    pageIndex = 0,
-                    tool = DrawingToolType.HIGHLIGHTER,
-                    colorArgb = 0xFFD97757.toInt(),
-                    thickness = 20f,
-                    points = highlightPoints
-                ),
                 NoteStroke(
                     id = "st_axis",
                     pageIndex = 0,
                     tool = DrawingToolType.PEN,
-                    colorArgb = 0xFF2563EB.toInt(),
-                    thickness = 3.2f,
+                    colorArgb = 0xFF2B63D9.toInt(),
+                    thickness = 3.6f,
                     points = axisPoints
                 ),
                 NoteStroke(
                     id = "st_wave",
                     pageIndex = 0,
-                    tool = DrawingToolType.PEN,
-                    colorArgb = 0xFF1F1F1F.toInt(),
+                    tool = DrawingToolType.FINE_FOUNTAIN,
+                    colorArgb = 0xFFDC4C46.toInt(),
                     thickness = 4.2f,
                     points = wavePoints
                 )
@@ -682,11 +744,11 @@ class ChatViewModel @Inject constructor(
                 TextBlock(
                     id = "tb_shared_1",
                     pageIndex = 0,
-                    x = 120f,
+                    x = 110f,
                     y = 140f,
                     width = 460f,
-                    text = "$senderName tarafından E2EE (AES-256-GCM) ile şifrelenerek gönderildi.",
-                    colorArgb = 0xFF1F1F1F.toInt(),
+                    text = "$senderName tarafından uçtan uca şifrelenerek gönderildi.",
+                    colorArgb = 0xFF1A1C23.toInt(),
                     fontSizeSp = 17f
                 )
             ),
@@ -695,4 +757,3 @@ class ChatViewModel @Inject constructor(
         )
     }
 }
-

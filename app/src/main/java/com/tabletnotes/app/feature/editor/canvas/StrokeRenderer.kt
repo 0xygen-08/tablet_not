@@ -7,12 +7,14 @@ import com.tabletnotes.app.domain.model.DrawingToolType
 import com.tabletnotes.app.domain.model.NoteStroke
 import com.tabletnotes.app.domain.model.StrokePoint
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.max
+import kotlin.math.sin
 
 /**
- * Basınç (pressure) ve eğim (tilt) duyarlı vektör çizgi çizici.
- * Hem Karo Önbelleği (BitmapTileCache) içine sabitlenmiş çizgileri ("dry ink")
- * hem de aktif çizilmekte olan çizginin ("wet ink" + tahmin edilen uç) yedek çizimini yapar.
+ * Samsung Notes tarzı çoklu kalem ucu (İnce Dolma Kalem, Kalın Dolma/Kaligrafi Kalemi,
+ * Tükenmez Kalem, Kurşun Kalem, Marker Kalem, Sulu Boya Fırçası, Fosforlu Kalem) destekli
+ * basınç ve eğim duyarlı vektör çizgi çizici.
  */
 object StrokeRenderer {
 
@@ -22,12 +24,14 @@ object StrokeRenderer {
         strokeJoin = Paint.Join.ROUND
     }
 
+    private val haloPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.DITHER_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+    }
+
     private val reusablePath = Path()
 
-    /**
-     * Tamamlanmış bir [NoteStroke] nesnesini verilen Android [Canvas] üzerine çizer.
-     * Canvas'ın halihazırda belge koordinatlarına (veya ilgili karo ofsetine) dönüştürülmüş olduğu varsayılır.
-     */
     fun drawStroke(canvas: Canvas, stroke: NoteStroke) {
         val pts = stroke.points
         if (pts.isEmpty()) return
@@ -36,35 +40,73 @@ object StrokeRenderer {
 
         if (pts.size == 1) {
             val p = pts[0]
-            val radius = computePointWidth(stroke.tool, stroke.thickness, p.pressure, p.tiltRadians) * 0.5f
+            val radius = computePointWidth(
+                tool = stroke.tool,
+                baseThickness = stroke.thickness,
+                pressure = p.pressure,
+                tiltRadians = p.tiltRadians,
+                directionAngle = 0f
+            ) * 0.5f
             strokePaint.style = Paint.Style.FILL
             canvas.drawCircle(p.x, p.y, radius.coerceAtLeast(1f), strokePaint)
             strokePaint.style = Paint.Style.STROKE
             return
         }
 
-        // Fosforlu kalem veya sabit basınçlı kısa çizgiler için tek yumuşak Quadratic Bezier Path
-        if (stroke.tool == DrawingToolType.HIGHLIGHTER || !hasSignificantPressureVariation(pts)) {
+        // Sulu boya fırçası: yumuşak dış katman + iç pigment katmanı
+        if (stroke.tool == DrawingToolType.WATERCOLOR) {
+            buildSmoothPath(pts, reusablePath)
+            haloPaint.color = withAlpha(stroke.colorArgb, 0x28)
+            haloPaint.strokeWidth = stroke.thickness * 2.9f
+            canvas.drawPath(reusablePath, haloPaint)
+
+            strokePaint.color = withAlpha(stroke.colorArgb, 0x4C)
+            strokePaint.strokeWidth = stroke.thickness * 1.9f
+            canvas.drawPath(reusablePath, strokePaint)
+            return
+        }
+
+        // Fosforlu kalem veya Marker kalem için pürüzsüz tek Bezier Path
+        if (
+            stroke.tool == DrawingToolType.HIGHLIGHTER ||
+            stroke.tool == DrawingToolType.MARKER ||
+            (stroke.tool == DrawingToolType.PEN && !hasSignificantPressureVariation(pts))
+        ) {
             val avgPressure = pts.sumOf { it.pressure.toDouble() }.toFloat() / pts.size
             val avgTilt = pts.sumOf { it.tiltRadians.toDouble() }.toFloat() / pts.size
-            strokePaint.strokeWidth = computePointWidth(stroke.tool, stroke.thickness, avgPressure, avgTilt)
+            strokePaint.strokeWidth = computePointWidth(
+                tool = stroke.tool,
+                baseThickness = stroke.thickness,
+                pressure = avgPressure,
+                tiltRadians = avgTilt,
+                directionAngle = 0f
+            )
             buildSmoothPath(pts, reusablePath)
             canvas.drawPath(reusablePath, strokePaint)
             return
         }
 
-        // Basınç ve eğim değişimi belirgin olan Kalem (PEN) çizgileri için değişken kalınlıklı segment çizimi
+        // Dolma Kalem, Kaligrafi, Kurşun Kalem ve değişken basınçlı çizgiler için segment çizimi
         var prevX = pts[0].x
         var prevY = pts[0].y
         for (i in 1 until pts.size) {
             val curr = pts[i]
             val midX = (prevX + curr.x) * 0.5f
             val midY = (prevY + curr.y) * 0.5f
+            val dirAngle = atan2(curr.y - prevY, curr.x - prevX)
+
+            if (stroke.tool == DrawingToolType.PENCIL) {
+                val pNorm = curr.pressure.coerceIn(0.15f, 1.0f)
+                val alpha = (110 + (pNorm * 115)).toInt().coerceIn(80, 230)
+                strokePaint.color = withAlpha(stroke.colorArgb, alpha)
+            }
+
             strokePaint.strokeWidth = computePointWidth(
                 tool = stroke.tool,
                 baseThickness = stroke.thickness,
                 pressure = curr.pressure,
-                tiltRadians = curr.tiltRadians
+                tiltRadians = curr.tiltRadians,
+                directionAngle = dirAngle
             )
             canvas.drawLine(prevX, prevY, midX, midY, strokePaint)
             prevX = midX
@@ -74,10 +116,6 @@ object StrokeRenderer {
         canvas.drawLine(prevX, prevY, last.x, last.y, strokePaint)
     }
 
-    /**
-     * Aktif çizim sırasında gerçek noktaları + `MotionEventPredictor` tarafından tahmin edilen
-     * (predicted) noktaları düşük gecikmeyle çizer.
-     */
     fun drawWetStrokePoints(
         canvas: Canvas,
         tool: DrawingToolType,
@@ -112,10 +150,29 @@ object StrokeRenderer {
     ) {
         when (tool) {
             DrawingToolType.HIGHLIGHTER -> {
-                // Fosforlu kalem: yarı saydam (%40 alfa) ve kesik/geniş uç
-                strokePaint.color = (colorArgb and 0x00FFFFFF) or (0x66 shl 24)
+                strokePaint.color = withAlpha(colorArgb, 0x66)
                 strokePaint.strokeCap = Paint.Cap.SQUARE
                 strokePaint.strokeWidth = baseThickness * 2.4f
+            }
+            DrawingToolType.CALLIGRAPHY -> {
+                strokePaint.color = colorArgb
+                strokePaint.strokeCap = Paint.Cap.SQUARE
+                strokePaint.strokeWidth = baseThickness * 1.35f
+            }
+            DrawingToolType.MARKER -> {
+                strokePaint.color = withAlpha(colorArgb, 0xEC)
+                strokePaint.strokeCap = Paint.Cap.ROUND
+                strokePaint.strokeWidth = baseThickness * 1.55f
+            }
+            DrawingToolType.PENCIL -> {
+                strokePaint.color = withAlpha(colorArgb, 0xC8)
+                strokePaint.strokeCap = Paint.Cap.ROUND
+                strokePaint.strokeWidth = baseThickness * 0.95f
+            }
+            DrawingToolType.WATERCOLOR -> {
+                strokePaint.color = withAlpha(colorArgb, 0x50)
+                strokePaint.strokeCap = Paint.Cap.ROUND
+                strokePaint.strokeWidth = baseThickness * 2.0f
             }
             else -> {
                 strokePaint.color = colorArgb
@@ -129,17 +186,44 @@ object StrokeRenderer {
         tool: DrawingToolType,
         baseThickness: Float,
         pressure: Float,
-        tiltRadians: Float
+        tiltRadians: Float,
+        directionAngle: Float
     ): Float {
-        if (tool == DrawingToolType.HIGHLIGHTER) {
-            val tiltFactor = 1f + (abs(tiltRadians) * 0.35f).coerceAtMost(0.5f)
-            return baseThickness * 2.4f * tiltFactor
+        val p = pressure.coerceIn(0.05f, 1.0f)
+        val tiltFactor = 1f + (abs(tiltRadians) * 0.25f).coerceAtMost(0.45f)
+        return when (tool) {
+            DrawingToolType.HIGHLIGHTER -> baseThickness * 2.4f * tiltFactor
+            DrawingToolType.FINE_FOUNTAIN -> {
+                // İnce dolma kalem: keskin ince uçlar + güçlü basınç duyarlılığı
+                val factor = 0.28f + (p * p * 1.45f)
+                max(0.8f, baseThickness * factor)
+            }
+            DrawingToolType.CALLIGRAPHY -> {
+                // Kalın dolma / kaligrafi kalemi: 45 derece kesik uç açısı + basınç etkisi
+                val nibAngleEffect = 0.45f + 0.95f * abs(sin(directionAngle - 0.785f))
+                val pressureEffect = 0.55f + (p * 0.95f)
+                max(1.2f, baseThickness * 1.35f * nibAngleEffect * pressureEffect)
+            }
+            DrawingToolType.PENCIL -> {
+                // Kurşun kalem: eğimle genişleyen gölgeleme
+                val pencilTilt = 1f + (abs(tiltRadians) * 0.6f).coerceAtMost(0.9f)
+                max(1.0f, baseThickness * (0.65f + p * 0.55f) * pencilTilt)
+            }
+            DrawingToolType.MARKER -> {
+                max(2.0f, baseThickness * 1.55f * (0.88f + p * 0.24f))
+            }
+            DrawingToolType.WATERCOLOR -> {
+                max(2.5f, baseThickness * 2.1f * (0.75f + p * 0.65f))
+            }
+            else -> {
+                val factor = 0.45f + (p * 1.10f)
+                max(1f, baseThickness * factor * tiltFactor)
+            }
         }
-        // Kalem: basınç (0.05..1.0) kalınlığı 0.45x ile 1.55x arasında doğal şekilde modüle eder
-        val normalizedPressure = pressure.coerceIn(0.05f, 1.0f)
-        val pressureFactor = 0.45f + (normalizedPressure * 1.10f)
-        val tiltFactor = 1f + (abs(tiltRadians) * 0.2f).coerceAtMost(0.35f)
-        return max(1f, baseThickness * pressureFactor * tiltFactor)
+    }
+
+    private fun withAlpha(colorArgb: Int, alpha: Int): Int {
+        return (colorArgb and 0x00FFFFFF) or ((alpha.coerceIn(0, 255)) shl 24)
     }
 
     private fun hasSignificantPressureVariation(points: List<StrokePoint>): Boolean {
@@ -173,4 +257,3 @@ object StrokeRenderer {
         outPath.lineTo(last.x, last.y)
     }
 }
-

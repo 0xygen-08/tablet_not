@@ -104,7 +104,7 @@ class AtomicNoteFileStore(
     }
 
     private fun sanitizeId(rawId: String): String {
-        return rawId.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+        return rawId.replace(Regex("[^a-zA-Z0-9_-]"), "_").take(128).ifBlank { "default_note" }
     }
 }
 

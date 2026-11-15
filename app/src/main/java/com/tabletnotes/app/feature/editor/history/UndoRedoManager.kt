@@ -10,6 +10,7 @@ sealed interface EditorCommand {
     data class AddStroke(val stroke: NoteStroke) : EditorCommand
     data class BatchAddStrokes(val strokes: List<NoteStroke>) : EditorCommand
     data class EraseStrokes(val erasedStrokes: List<NoteStroke>) : EditorCommand
+    data class ReplaceStrokes(val before: List<NoteStroke>, val after: List<NoteStroke>) : EditorCommand
     data class UpsertTextBlock(val previous: TextBlock?, val updated: TextBlock?) : EditorCommand
 }
 
@@ -59,4 +60,3 @@ class UndoRedoManager(
         redoStack.clear()
     }
 }
-

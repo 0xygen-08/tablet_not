@@ -22,16 +22,16 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             var currentTheme by rememberSaveable {
-                mutableStateOf(ThemePreset.STITCH_CHARCOAL_DARK)
+                mutableStateOf(ThemePreset.NIGHT_DARK)
             }
 
             TabletNotesTheme(preset = currentTheme) {
                 TabletNotesShell(
                     currentTheme = currentTheme,
-                    onCycleTheme = { currentTheme = currentTheme.next() }
+                    onCycleTheme = { currentTheme = currentTheme.next() },
+                    onSelectTheme = { currentTheme = it }
                 )
             }
         }
     }
 }
-

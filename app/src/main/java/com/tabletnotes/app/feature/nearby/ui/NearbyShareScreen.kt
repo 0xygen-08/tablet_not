@@ -8,7 +8,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -29,6 +28,7 @@ import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.StopCircle
@@ -36,6 +36,8 @@ import androidx.compose.material.icons.filled.TabletAndroid
 import androidx.compose.material.icons.filled.WifiTethering
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -52,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -69,6 +72,8 @@ fun NearbyShareScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.screenWidthDp > configuration.screenHeightDp
     val palette = TabletNotesTheme.palette
 
     val notes by viewModel.notes.collectAsState()
@@ -81,6 +86,7 @@ fun NearbyShareScreen(
     var hasPermissions by remember {
         mutableStateOf(NearbyPermissionsHelper.hasAllPermissions(context))
     }
+    var showTestMenu by remember { mutableStateOf(false) }
 
     val permissionsLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -90,18 +96,13 @@ fun NearbyShareScreen(
 
     val effectiveSelectedId = selectedNoteId ?: notes.firstOrNull()?.id
 
-    Row(
-        modifier = modifier.fillMaxSize(),
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        // SOL PANEL: Gönderilecek Not Seçimi & Çalışma Zamanı İzin Durumu (360.dp)
+    @Composable
+    fun NoteSelectionPane(paneModifier: Modifier) {
         Surface(
             color = palette.surfaceElevated,
             shape = RoundedCornerShape(palette.cardCornerRadius),
-            border = BorderStroke(1.dp, palette.border),
-            modifier = Modifier
-                .width(360.dp)
-                .fillMaxHeight()
+            border = BorderStroke(1.dp, palette.borderSubtle),
+            modifier = paneModifier
         ) {
             Column(
                 modifier = Modifier
@@ -110,8 +111,8 @@ fun NearbyShareScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = stringResource(R.string.nearby_section_title),
-                    style = MaterialTheme.typography.titleMedium,
+                    text = stringResource(R.string.nearby_select_note_label),
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                     color = palette.textPrimary
                 )
                 Text(
@@ -161,7 +162,7 @@ fun NearbyShareScreen(
                                         NearbyPermissionsHelper.getRequiredPermissions().toTypedArray()
                                     )
                                 },
-                                shape = RoundedCornerShape(10.dp),
+                                shape = CircleShape,
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = palette.primaryAccent,
                                     contentColor = palette.onPrimaryAccent
@@ -176,12 +177,6 @@ fun NearbyShareScreen(
 
                 HorizontalDivider(color = palette.borderSubtle)
 
-                Text(
-                    text = stringResource(R.string.nearby_select_note_label),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = palette.textSecondary
-                )
-
                 LazyColumn(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -189,30 +184,25 @@ fun NearbyShareScreen(
                     items(notes, key = { it.id }) { note ->
                         val isSelected = note.id == effectiveSelectedId
                         Surface(
-                            color = if (isSelected) palette.primaryAccent.copy(alpha = 0.18f) else palette.surface,
-                            shape = RoundedCornerShape(12.dp),
+                            color = if (isSelected) palette.primaryAccent.copy(alpha = 0.14f) else palette.surface,
+                            shape = RoundedCornerShape(14.dp),
                             border = BorderStroke(
                                 1.dp,
                                 if (isSelected) palette.primaryAccent else palette.borderSubtle
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(14.dp))
                                 .clickable { viewModel.selectNote(note.id) }
                         ) {
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Text(
-                                    text = note.title,
-                                    style = MaterialTheme.typography.titleSmall,
+                                    text = "${note.courseName} › ${note.title}",
+                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                                     color = palette.textPrimary
                                 )
                                 Text(
-                                    text = stringResource(
-                                        R.string.notes_card_meta_format,
-                                        note.pageCount,
-                                        note.strokeCount,
-                                        formatFileSize(note.fileSizeBytes)
-                                    ),
+                                    text = "${note.pageCount} sayfa • ${formatFileSize(note.fileSizeBytes)}",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = palette.textMuted
                                 )
@@ -222,143 +212,147 @@ fun NearbyShareScreen(
                 }
             }
         }
+    }
 
-        // SAĞ PANEL: Cihaz Tarama, Görünür Olma ve Canlı Aktarım İlerlemesi (İptal / Yeniden Dene)
+    @Composable
+    fun PeersAndTransferPane(paneModifier: Modifier) {
         Surface(
             color = palette.surfaceElevated,
             shape = RoundedCornerShape(palette.cardCornerRadius),
-            border = BorderStroke(1.dp, palette.border),
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight()
+            border = BorderStroke(1.dp, palette.borderSubtle),
+            modifier = paneModifier
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // Kontroller: Görünür Yap (Advertise) / Tara (Discover) / Simüle Et
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Button(
-                        onClick = {
-                            if (!hasPermissions) {
-                                permissionsLauncher.launch(
-                                    NearbyPermissionsHelper.getRequiredPermissions().toTypedArray()
-                                )
-                            }
-                            viewModel.startAdvertising()
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isAdvertising) palette.statusReadyEmerald else palette.primaryAccent,
-                            contentColor = palette.onPrimaryAccent
-                        )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.WifiTethering,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(text = stringResource(R.string.nearby_start_advertising_btn))
-                    }
-
-                    OutlinedButton(
-                        onClick = {
-                            if (!hasPermissions) {
-                                permissionsLauncher.launch(
-                                    NearbyPermissionsHelper.getRequiredPermissions().toTypedArray()
-                                )
-                            }
-                            viewModel.startDiscovery()
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(
-                            1.dp,
-                            if (isDiscovering) palette.statusReadyEmerald else palette.border
-                        )
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.BluetoothSearching,
-                            contentDescription = null,
-                            tint = if (isDiscovering) palette.statusReadyEmerald else palette.textPrimary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = stringResource(R.string.nearby_start_discovery_btn),
-                            color = palette.textPrimary
-                        )
-                    }
-
-                    if (isAdvertising || isDiscovering) {
-                        OutlinedButton(
-                            onClick = { viewModel.stopAll() },
-                            shape = RoundedCornerShape(12.dp)
+                        Button(
+                            onClick = {
+                                if (!hasPermissions) {
+                                    permissionsLauncher.launch(
+                                        NearbyPermissionsHelper.getRequiredPermissions().toTypedArray()
+                                    )
+                                }
+                                viewModel.startAdvertising()
+                            },
+                            shape = CircleShape,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isAdvertising) palette.statusReadyEmerald else palette.primaryAccent,
+                                contentColor = palette.onPrimaryAccent
+                            )
                         ) {
                             Icon(
-                                imageVector = Icons.Default.StopCircle,
+                                imageVector = Icons.Default.WifiTethering,
                                 contentDescription = null,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text(text = stringResource(R.string.nearby_stop_all_btn))
+                            Text(text = stringResource(R.string.nearby_start_advertising_btn))
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                if (!hasPermissions) {
+                                    permissionsLauncher.launch(
+                                        NearbyPermissionsHelper.getRequiredPermissions().toTypedArray()
+                                    )
+                                }
+                                viewModel.startDiscovery()
+                            },
+                            shape = CircleShape,
+                            border = BorderStroke(
+                                1.dp,
+                                if (isDiscovering) palette.statusReadyEmerald else palette.border
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.BluetoothSearching,
+                                contentDescription = null,
+                                tint = if (isDiscovering) palette.statusReadyEmerald else palette.textPrimary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = stringResource(R.string.nearby_start_discovery_btn),
+                                color = palette.textPrimary
+                            )
+                        }
+
+                        if (isAdvertising || isDiscovering) {
+                            OutlinedButton(
+                                onClick = { viewModel.stopAll() },
+                                shape = CircleShape
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.StopCircle,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(text = stringResource(R.string.nearby_stop_all_btn))
+                            }
                         }
                     }
-                }
 
-                // Tek Emülatörde Test Kolaylığı İçin Simülasyon Butonları
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = { viewModel.simulateDiscoverAndSendSelectedNote() },
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, palette.primaryAccent)
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Send,
-                            contentDescription = null,
-                            tint = palette.primaryAccent,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = stringResource(R.string.nearby_simulate_peer_btn),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = palette.textPrimary
-                        )
-                    }
-
-                    OutlinedButton(
-                        onClick = { viewModel.simulateReceiveNearbyNote() },
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, palette.border)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Download,
-                            contentDescription = null,
-                            tint = palette.statusReadyEmerald,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = stringResource(R.string.nearby_simulate_receive_btn),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = palette.textPrimary
-                        )
+                    // Test / Simülasyon Menüsü (Geliştirici Araçları)
+                    Box {
+                        Surface(
+                            onClick = { showTestMenu = true },
+                            shape = CircleShape,
+                            color = palette.surfaceInteractive,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = "Test Araçları",
+                                    tint = palette.textPrimary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                        DropdownMenu(
+                            expanded = showTestMenu,
+                            onDismissRequest = { showTestMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.nearby_simulate_peer_btn)) },
+                                leadingIcon = {
+                                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null)
+                                },
+                                onClick = {
+                                    showTestMenu = false
+                                    viewModel.simulateDiscoverAndSendSelectedNote()
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.nearby_simulate_receive_btn)) },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Download, contentDescription = null)
+                                },
+                                onClick = {
+                                    showTestMenu = false
+                                    viewModel.simulateReceiveNearbyNote()
+                                }
+                            )
+                        }
                     }
                 }
 
                 HorizontalDivider(color = palette.borderSubtle)
 
-                // Aktif Not Aktarım Kartı (Canlı İlerleme Yüzdesi + İptal + Yeniden Dene)
+                // Aktif Not Aktarım Kartı
                 val transfer = activeTransfer
                 if (transfer != null) {
                     Surface(
@@ -416,7 +410,7 @@ fun NearbyShareScreen(
                                 if (transfer.state in listOf(NearbySessionState.CONNECTING, NearbySessionState.IN_PROGRESS)) {
                                     OutlinedButton(
                                         onClick = { viewModel.cancelActiveTransfer() },
-                                        shape = RoundedCornerShape(10.dp)
+                                        shape = CircleShape
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.Cancel,
@@ -431,7 +425,7 @@ fun NearbyShareScreen(
                                 if (transfer.state in listOf(NearbySessionState.CANCELLED, NearbySessionState.FAILED)) {
                                     Button(
                                         onClick = { viewModel.retryLastTransfer() },
-                                        shape = RoundedCornerShape(10.dp),
+                                        shape = CircleShape,
                                         colors = ButtonDefaults.buttonColors(
                                             containerColor = palette.primaryAccent,
                                             contentColor = palette.onPrimaryAccent
@@ -450,7 +444,7 @@ fun NearbyShareScreen(
                                 if (transfer.state == NearbySessionState.COMPLETED) {
                                     Button(
                                         onClick = { onOpenNoteInEditor(transfer.noteId) },
-                                        shape = RoundedCornerShape(10.dp),
+                                        shape = CircleShape,
                                         colors = ButtonDefaults.buttonColors(
                                             containerColor = palette.statusReadyEmerald,
                                             contentColor = palette.onPrimaryAccent
@@ -473,7 +467,7 @@ fun NearbyShareScreen(
                 // Bulunan Yakın Cihazlar Listesi
                 Text(
                     text = stringResource(R.string.nearby_discovered_peers_title),
-                    style = MaterialTheme.typography.titleSmall,
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                     color = palette.textPrimary
                 )
 
@@ -500,7 +494,7 @@ fun NearbyShareScreen(
                             Surface(
                                 color = palette.surface,
                                 shape = RoundedCornerShape(14.dp),
-                                border = BorderStroke(1.dp, palette.border),
+                                border = BorderStroke(1.dp, palette.borderSubtle),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(
@@ -519,7 +513,7 @@ fun NearbyShareScreen(
                                             modifier = Modifier
                                                 .size(40.dp)
                                                 .clip(CircleShape)
-                                                .background(palette.primaryAccent.copy(alpha = 0.2f)),
+                                                .background(palette.primaryAccent.copy(alpha = 0.16f)),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Icon(
@@ -531,11 +525,11 @@ fun NearbyShareScreen(
                                         Column {
                                             Text(
                                                 text = peer.deviceName,
-                                                style = MaterialTheme.typography.titleSmall,
+                                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                                                 color = palette.textPrimary
                                             )
                                             Text(
-                                                text = "Endpoint: ${peer.endpointId} • Bluetooth + Wi-Fi Direct",
+                                                text = "Wi-Fi Direct / Bluetooth",
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = palette.textMuted
                                             )
@@ -544,7 +538,7 @@ fun NearbyShareScreen(
 
                                     Button(
                                         onClick = { viewModel.sendSelectedNoteToPeer(peer) },
-                                        shape = RoundedCornerShape(10.dp),
+                                        shape = CircleShape,
                                         colors = ButtonDefaults.buttonColors(
                                             containerColor = palette.primaryAccent,
                                             contentColor = palette.onPrimaryAccent
@@ -564,6 +558,40 @@ fun NearbyShareScreen(
                     }
                 }
             }
+        }
+    }
+
+    if (isLandscape) {
+        Row(
+            modifier = modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            NoteSelectionPane(
+                paneModifier = Modifier
+                    .width(340.dp)
+                    .fillMaxHeight()
+            )
+            PeersAndTransferPane(
+                paneModifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+            )
+        }
+    } else {
+        Column(
+            modifier = modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            NoteSelectionPane(
+                paneModifier = Modifier
+                    .fillMaxWidth()
+                    .weight(0.45f)
+            )
+            PeersAndTransferPane(
+                paneModifier = Modifier
+                    .fillMaxWidth()
+                    .weight(0.55f)
+            )
         }
     }
 }

@@ -4,7 +4,7 @@ import com.tabletnotes.app.domain.model.NoteDocument
 import kotlinx.coroutines.flow.Flow
 
 /**
- * Not listesi ekranında gösterilen özet üst veri modeli.
+ * Not listesi ve ders klasörü ekranında gösterilen özet üst veri modeli.
  */
 data class NoteSummary(
     val id: String,
@@ -15,7 +15,8 @@ data class NoteSummary(
     val thumbnailPath: String?,
     val fileSizeBytes: Long,
     val createdAtMillis: Long,
-    val updatedAtMillis: Long
+    val updatedAtMillis: Long,
+    val courseName: String = "Fizik"
 )
 
 /**
@@ -28,4 +29,3 @@ interface NoteRepository {
     suspend fun deleteNote(noteId: String)
     suspend fun ensureSampleNotesSeeded()
 }
-

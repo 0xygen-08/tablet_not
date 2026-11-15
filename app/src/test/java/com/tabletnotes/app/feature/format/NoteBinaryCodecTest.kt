@@ -6,6 +6,8 @@ import com.tabletnotes.app.domain.model.DrawingToolType
 import com.tabletnotes.app.domain.model.NoteDocument
 import com.tabletnotes.app.domain.model.NotePage
 import com.tabletnotes.app.domain.model.NoteStroke
+import com.tabletnotes.app.domain.model.PaperColor
+import com.tabletnotes.app.domain.model.PaperTemplate
 import com.tabletnotes.app.domain.model.StrokePoint
 import com.tabletnotes.app.domain.model.TextBlock
 import com.tabletnotes.app.feature.format.binary.InvalidNoteFormatException
@@ -189,9 +191,58 @@ class NoteBinaryCodecTest {
         }
     }
 
+    @Test
+    fun `encode and decode preserves all pen variants courseName paperColor and paperTemplate`() {
+        val tools = listOf(
+            DrawingToolType.FINE_FOUNTAIN,
+            DrawingToolType.CALLIGRAPHY,
+            DrawingToolType.PEN,
+            DrawingToolType.PENCIL,
+            DrawingToolType.MARKER,
+            DrawingToolType.WATERCOLOR,
+            DrawingToolType.HIGHLIGHTER
+        )
+        val strokes = tools.mapIndexed { idx, tool ->
+            NoteStroke(
+                id = "s-$idx",
+                pageIndex = 0,
+                tool = tool,
+                colorArgb = 0xFFE03E3E.toInt(),
+                thickness = 3.5f + idx,
+                points = listOf(
+                    StrokePoint(x = 50f + idx * 10f, y = 80f, pressure = 0.6f),
+                    StrokePoint(x = 90f + idx * 10f, y = 120f, pressure = 0.8f)
+                )
+            )
+        }
+        val doc = NoteDocument(
+            id = "doc-phys-vec",
+            title = "Vektörler",
+            courseName = "Fizik",
+            paperColor = PaperColor.DARK,
+            paperTemplate = PaperTemplate.GRID,
+            pages = listOf(NotePage(0)),
+            strokes = strokes,
+            textBlocks = emptyList(),
+            createdAtMillis = 1700000000000L,
+            updatedAtMillis = 1700000020000L
+        )
+
+        val encoded = NoteBinaryCodec.encode(doc, compress = true)
+        val decoded = NoteBinaryCodec.decode(encoded)
+
+        assertDocumentsIdentical(doc, decoded)
+        assertEquals("Fizik", decoded.courseName)
+        assertEquals(PaperColor.DARK, decoded.paperColor)
+        assertEquals(PaperTemplate.GRID, decoded.paperTemplate)
+    }
+
     private fun assertDocumentsIdentical(expected: NoteDocument, actual: NoteDocument) {
         assertEquals(expected.id, actual.id)
         assertEquals(expected.title, actual.title)
+        assertEquals(expected.courseName, actual.courseName)
+        assertEquals(expected.paperColor, actual.paperColor)
+        assertEquals(expected.paperTemplate, actual.paperTemplate)
         assertEquals(expected.createdAtMillis, actual.createdAtMillis)
         assertEquals(expected.updatedAtMillis, actual.updatedAtMillis)
 

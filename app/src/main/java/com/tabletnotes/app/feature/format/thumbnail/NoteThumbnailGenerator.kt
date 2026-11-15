@@ -22,9 +22,9 @@ object NoteThumbnailGenerator {
 
     fun renderThumbnailPngBytes(
         document: NoteDocument,
-        backgroundColorArgb: Int = 0xFF111215.toInt(),
-        gridColorArgb: Int = 0xFF1F232B.toInt(),
-        borderColorArgb: Int = 0xFF2D313A.toInt()
+        backgroundColorArgb: Int = document.paperColor.bgArgb,
+        gridColorArgb: Int = document.paperColor.minorPatternArgb,
+        borderColorArgb: Int = document.paperColor.majorPatternArgb
     ): ByteArray {
         val bitmap = Bitmap.createBitmap(THUMB_WIDTH, THUMB_HEIGHT, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)

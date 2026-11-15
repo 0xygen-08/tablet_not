@@ -3,6 +3,7 @@ package com.tabletnotes.app.feature.editor.ui
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.RectF
 import android.view.MotionEvent
@@ -13,6 +14,7 @@ import com.tabletnotes.app.domain.model.BoundingBox
 import com.tabletnotes.app.domain.model.DrawingToolType
 import com.tabletnotes.app.domain.model.NotePage
 import com.tabletnotes.app.domain.model.NoteStroke
+import com.tabletnotes.app.domain.model.PaperTemplate
 import com.tabletnotes.app.domain.model.StrokePoint
 import com.tabletnotes.app.feature.editor.canvas.StrokeRenderer
 import com.tabletnotes.app.feature.editor.ink.InputRouteDecision
@@ -24,12 +26,8 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
- * Düşük gecikmeli Stylus + Parmak + Çoklu Sayfa Tuval Görünümü (Custom Android View).
- *
- * Neden doğrudan Android `View` + `Canvas`?
- * - `MotionEvent.getHistoricalX/Y` ve `MotionEventPredictor` örneklerine sıfır kopyalama ile erişir.
- * - Aktif çizgiyi ("wet ink") Jetpack Ink (`androidx.ink`) ile çizerken, sabitlenmiş 10.000+ çizgiyi
- *   ("dry ink") `BitmapTileCache` üzerinden sadece görünüm alanına (Viewport) düşen karolarla çizer.
+ * Düşük gecikmeli Stylus + Parmak + Çoklu Kalem + Kare Seçim Modu (Lasso/Rectangle Selection)
+ * ve Bağımsız Kağıt Rengi/Deseni (Noktalı, Kareli, Çizgili, Düz) destekli Tuval Görünümü.
  */
 @SuppressLint("ViewConstructor")
 class NoteEditorCanvasView(
@@ -48,14 +46,23 @@ class NoteEditorCanvasView(
     // Aktif çizilmekte olan çizgi ("Wet Ink")
     private val activeRealPoints = ArrayList<StrokePoint>(256)
     private var activePredictedPoints: List<StrokePoint> = emptyList()
-    private var activeToolInFlight: DrawingToolType = DrawingToolType.PEN
+    private var activeToolInFlight: DrawingToolType = DrawingToolType.FINE_FOUNTAIN
     private var isStrokeInFlight: Boolean = false
 
-    // Aktif silgi hareketi sırasında silinen çizgiler (tek Undo kaydı için)
+    // Aktif silgi hareketi
     private val erasedInCurrentSwipe = LinkedHashMap<String, NoteStroke>()
     private var lastEraserDocX: Float = Float.NaN
     private var lastEraserDocY: Float = Float.NaN
     private var isEraserActive: Boolean = false
+
+    // Kare Seçim Modu (Lasso / Rectangle Selection) Durumu
+    private var lassoStartX: Float = 0f
+    private var lassoStartY: Float = 0f
+    private var isDraggingSelection: Boolean = false
+    private var isResizingSelection: Boolean = false
+    private var lastSelectionTouchDocX: Float = 0f
+    private var lastSelectionTouchDocY: Float = 0f
+    private var selectionMoveOriginalSnapshot: List<NoteStroke>? = null
 
     // Tek/İki parmak kaydırma (Pan) ve yakınlaştırma (Zoom) durumu
     private var isPanning: Boolean = false
@@ -66,22 +73,29 @@ class NoteEditorCanvasView(
     private var lastFrameNano: Long = 0L
     private var smoothedFps: Float = 60f
 
-    // Boya (Paint) nesneleri — GC yükü oluşturmamak için önceden ayrılır
+    // Boya (Paint) nesneleri
     private val pageBgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val pageShadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0x18000000
+        style = Paint.Style.FILL
+    }
     private val pageBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 2f
+        strokeWidth = 1.6f
     }
-    private val minorGridPaint = Paint().apply {
+    private val minorGridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = 1f
     }
-    private val majorGridPaint = Paint().apply {
+    private val majorGridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = 1.4f
     }
+    private val dotPatternPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+    }
     private val pageLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        textSize = 24f
+        textSize = 22f
     }
     private val textBlockBgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val textBlockBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -95,7 +109,22 @@ class NoteEditorCanvasView(
         style = Paint.Style.STROKE
         strokeWidth = 2.5f
     }
+    private val selectionBoxFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0x162962FF
+        style = Paint.Style.FILL
+    }
+    private val selectionBoxStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFF2962FF.toInt()
+        style = Paint.Style.STROKE
+        strokeWidth = 2.2f
+        pathEffect = DashPathEffect(floatArrayOf(12f, 8f), 0f)
+    }
+    private val selectionHandlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFF2962FF.toInt()
+        style = Paint.Style.FILL
+    }
     private val pageRect = RectF()
+    private val selectionRectF = RectF()
 
     private val scaleDetector = ScaleGestureDetector(
         context,
@@ -113,7 +142,6 @@ class NoteEditorCanvasView(
                 val focusX = detector.focusX
                 val focusY = detector.focusY
 
-                // Odak noktasını sabit tutarak yakınlaştır
                 val docFocusX = (focusX - controller.panX) / oldZoom
                 val docFocusY = (focusY - controller.panY) / oldZoom
                 val newPanX = focusX - docFocusX * newZoom
@@ -129,8 +157,17 @@ class NoteEditorCanvasView(
     init {
         isFocusable = true
         isClickable = true
-        // Düşük gecikmeli çizim için donanım hızlandırmalı katman
         setLayerType(LAYER_TYPE_HARDWARE, null)
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (w > 0 && h > 0) {
+            // Sayfayı hem dikey hem yatay modda ekran ortasına hizala
+            val fitZoom = ((w - 48f) / NotePage.DEFAULT_PAGE_WIDTH).coerceIn(0.65f, 1.35f)
+            val centeredPanX = ((w - NotePage.DEFAULT_PAGE_WIDTH * fitZoom) * 0.5f).coerceAtLeast(16f)
+            controller.updateZoomAndPan(newZoom = fitZoom, newPanX = centeredPanX, newPanY = 18f)
+        }
     }
 
     fun syncState(revision: Int, palette: NoteThemePalette) {
@@ -172,7 +209,6 @@ class NoteEditorCanvasView(
             return true
         }
 
-        // Buraya gelindiyse kalem (veya izin verilen tek parmak/fare) ile çizim/silme/metin ekleme yapılır
         isPanning = false
         val effectiveTool = if (decision == InputRouteDecision.HARDWARE_STYLUS_ERASER) {
             DrawingToolType.ERASER
@@ -183,10 +219,87 @@ class NoteEditorCanvasView(
         when (effectiveTool) {
             DrawingToolType.TEXT -> handleTextToolTouch(event)
             DrawingToolType.ERASER -> handleEraserTouch(event)
-            DrawingToolType.PEN, DrawingToolType.HIGHLIGHTER ->
-                handleInkDrawingTouch(event, effectiveTool)
+            DrawingToolType.LASSO_SELECT -> handleLassoSelectionTouch(event)
+            else -> handleInkDrawingTouch(event, effectiveTool)
         }
         return true
+    }
+
+    private fun handleLassoSelectionTouch(event: MotionEvent) {
+        val docX = screenToDocX(event.x)
+        val docY = screenToDocY(event.y)
+        val existingBounds = controller.selectionBounds
+
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                if (existingBounds != null) {
+                    val handleDist = hypot(docX - existingBounds.maxX, docY - existingBounds.maxY)
+                    if (handleDist <= 28f) {
+                        isResizingSelection = true
+                        isDraggingSelection = false
+                        lastSelectionTouchDocX = docX
+                        lastSelectionTouchDocY = docY
+                        return
+                    }
+                    if (existingBounds.contains(docX, docY)) {
+                        isDraggingSelection = true
+                        isResizingSelection = false
+                        lastSelectionTouchDocX = docX
+                        lastSelectionTouchDocY = docY
+                        selectionMoveOriginalSnapshot = controller.getSelectedStrokes()
+                        return
+                    }
+                }
+                // Yeni kare seçim alanı başlat
+                isDraggingSelection = false
+                isResizingSelection = false
+                lassoStartX = docX
+                lassoStartY = docY
+                controller.clearSelection()
+                controller.updateLiveLassoRect(lassoStartX, lassoStartY, docX, docY)
+                invalidate()
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (isResizingSelection && existingBounds != null) {
+                    val prevW = max(24f, lastSelectionTouchDocX - existingBounds.centerX)
+                    val currW = max(24f, docX - existingBounds.centerX)
+                    val ratio = (currW / prevW).coerceIn(0.85f, 1.18f)
+                    if (kotlin.math.abs(ratio - 1f) > 0.03f) {
+                        controller.scaleSelectedStrokes(ratio)
+                        lastSelectionTouchDocX = docX
+                        lastSelectionTouchDocY = docY
+                        invalidate()
+                    }
+                } else if (isDraggingSelection) {
+                    val dx = docX - lastSelectionTouchDocX
+                    val dy = docY - lastSelectionTouchDocY
+                    if (hypot(dx, dy) >= 0.8f) {
+                        controller.translateSelectedStrokes(dx, dy, recordUndo = false)
+                        lastSelectionTouchDocX = docX
+                        lastSelectionTouchDocY = docY
+                        invalidate()
+                    }
+                } else {
+                    controller.updateLiveLassoRect(lassoStartX, lassoStartY, docX, docY)
+                    invalidate()
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (isDraggingSelection) {
+                    val orig = selectionMoveOriginalSnapshot
+                    if (orig != null) {
+                        controller.translateSelectedStrokes(0f, 0f, recordUndo = true, originalSnapshot = orig)
+                    }
+                    selectionMoveOriginalSnapshot = null
+                    isDraggingSelection = false
+                } else if (isResizingSelection) {
+                    isResizingSelection = false
+                } else {
+                    controller.finishLassoSelection()
+                }
+                invalidate()
+            }
+        }
     }
 
     private fun handlePanTouchEvent(event: MotionEvent) {
@@ -392,7 +505,6 @@ class NoteEditorCanvasView(
         val px = controller.panX
         val py = controller.panY
 
-        // Görünüm alanının (Viewport) belge uzayındaki sınırlayıcı kutusu (Viewport Culling için)
         val viewportDocBounds = BoundingBox(
             minX = -px / z,
             minY = -py / z,
@@ -404,17 +516,17 @@ class NoteEditorCanvasView(
         canvas.translate(px, py)
         canvas.scale(z, z)
 
-        // 1. Dikey Çoklu Sayfaları ve Kareli Defter Dokusunu Çiz (Sadece görünür sayfalar)
-        drawVisiblePages(canvas, palette, viewportDocBounds)
+        // 1. Bağımsız Kağıt Rengi ve Deseniyle Sayfaları Çiz (Noktalı, Kareli, Çizgili, Düz)
+        drawVisiblePages(canvas, viewportDocBounds)
 
-        // 2. Sabitlenmiş (Committed / Dry) Çizgileri Bitmap Karo Önbelleğinden (Tile Cache) Çiz
+        // 2. Sabitlenmiş Çizgileri Bitmap Karo Önbelleğinden Çiz
         controller.tileCache.drawVisibleTiles(
             canvas = canvas,
             viewportDocBounds = viewportDocBounds,
             spatialIndex = controller.spatialIndex
         )
 
-        // 3. Metin Kutularını (Text Blocks) Çiz
+        // 3. Metin Kutularını Çiz
         drawTextBlocks(canvas, palette, viewportDocBounds)
 
         // 4. Aktif Çizilmekte Olan Çizgiyi (Wet Ink + Tahmin Edilen Noktalar) Çiz
@@ -429,7 +541,10 @@ class NoteEditorCanvasView(
             )
         }
 
-        // 5. Silgi aktifse silgi dairesini göster
+        // 5. Kare Seçim Modu (Lasso / Selection Rectangle & Resize Handles) Çiz
+        drawSelectionOverlay(canvas)
+
+        // 6. Silgi aktifse silgi dairesini göster
         if (isEraserActive && !lastEraserDocX.isNaN()) {
             eraserCursorPaint.color = palette.secondaryAccent.toArgbInt()
             val radius = max(14f, controller.selectedThickness * 2.5f)
@@ -439,18 +554,44 @@ class NoteEditorCanvasView(
         canvas.restore()
     }
 
+    private fun drawSelectionOverlay(canvas: Canvas) {
+        val activeLasso = controller.liveLassoRect
+        if (activeLasso != null) {
+            selectionRectF.set(activeLasso.minX, activeLasso.minY, activeLasso.maxX, activeLasso.maxY)
+            canvas.drawRoundRect(selectionRectF, 8f, 8f, selectionBoxFillPaint)
+            canvas.drawRoundRect(selectionRectF, 8f, 8f, selectionBoxStrokePaint)
+        }
+
+        val selBounds = controller.selectionBounds
+        if (selBounds != null) {
+            selectionRectF.set(selBounds.minX, selBounds.minY, selBounds.maxX, selBounds.maxY)
+            canvas.drawRoundRect(selectionRectF, 8f, 8f, selectionBoxFillPaint)
+            canvas.drawRoundRect(selectionRectF, 8f, 8f, selectionBoxStrokePaint)
+
+            // 4 Köşe Tutamacı (Sağ alt köşe boyutlandırma tutamacıdır)
+            val r = 7.5f
+            canvas.drawCircle(selBounds.minX, selBounds.minY, r, selectionHandlePaint)
+            canvas.drawCircle(selBounds.maxX, selBounds.minY, r, selectionHandlePaint)
+            canvas.drawCircle(selBounds.minX, selBounds.maxY, r, selectionHandlePaint)
+            canvas.drawCircle(selBounds.maxX, selBounds.maxY, r * 1.35f, selectionHandlePaint)
+        }
+    }
+
     private fun drawVisiblePages(
         canvas: Canvas,
-        palette: NoteThemePalette,
         viewportDocBounds: BoundingBox
     ) {
-        pageBgPaint.color = palette.canvasBackground.toArgbInt()
-        pageBorderPaint.color = palette.border.toArgbInt()
-        minorGridPaint.color = palette.canvasMinorGrid.toArgbInt()
-        majorGridPaint.color = palette.canvasMajorGrid.toArgbInt()
-        pageLabelPaint.color = palette.textMuted.toArgbInt()
+        val pColor = controller.paperColor
+        val pTemplate = controller.paperTemplate
 
-        val gridStep = 32f
+        pageBgPaint.color = pColor.bgArgb
+        pageBorderPaint.color = pColor.majorPatternArgb
+        minorGridPaint.color = pColor.minorPatternArgb
+        majorGridPaint.color = pColor.majorPatternArgb
+        dotPatternPaint.color = pColor.majorPatternArgb
+        pageLabelPaint.color = pColor.majorPatternArgb
+
+        val gridStep = 28f
         val pages = controller.pages
 
         for (page in pages) {
@@ -459,45 +600,61 @@ class NoteEditorCanvasView(
             val pageBounds = BoundingBox(0f, topY, page.widthPt, bottomY)
             if (!pageBounds.intersects(viewportDocBounds)) continue
 
+            // Hafif sayfa gölgesi + 24dp yuvarlatılmış kağıt köşeleri (Taslak 3 ile uyumlu)
+            pageRect.set(4f, topY + 6f, page.widthPt + 4f, bottomY + 6f)
+            canvas.drawRoundRect(pageRect, 24f, 24f, pageShadowPaint)
+
             pageRect.set(0f, topY, page.widthPt, bottomY)
-            canvas.drawRoundRect(pageRect, 20f, 20f, pageBgPaint)
+            canvas.drawRoundRect(pageRect, 24f, 24f, pageBgPaint)
 
-            // Sayfa içi kareli ızgara (Graph Grid)
-            var col = 0
-            var gx = gridStep
-            while (gx < page.widthPt) {
-                val isMajor = col % 5 == 0
-                canvas.drawLine(
-                    gx,
-                    topY,
-                    gx,
-                    bottomY,
-                    if (isMajor) majorGridPaint else minorGridPaint
-                )
-                gx += gridStep
-                col++
+            when (pTemplate) {
+                PaperTemplate.DOTTED -> {
+                    var gy = topY + gridStep
+                    while (gy < bottomY - 12f) {
+                        var gx = gridStep
+                        while (gx < page.widthPt - 12f) {
+                            canvas.drawCircle(gx, gy, 1.8f, dotPatternPaint)
+                            gx += gridStep
+                        }
+                        gy += gridStep
+                    }
+                }
+                PaperTemplate.GRID -> {
+                    var col = 0
+                    var gx = gridStep
+                    while (gx < page.widthPt) {
+                        val isMajor = col % 5 == 0
+                        canvas.drawLine(gx, topY, gx, bottomY, if (isMajor) majorGridPaint else minorGridPaint)
+                        gx += gridStep
+                        col++
+                    }
+                    var row = 0
+                    var gy = topY + gridStep
+                    while (gy < bottomY) {
+                        val isMajor = row % 5 == 0
+                        canvas.drawLine(0f, gy, page.widthPt, gy, if (isMajor) majorGridPaint else minorGridPaint)
+                        gy += gridStep
+                        row++
+                    }
+                }
+                PaperTemplate.LINED -> {
+                    val lineSpacing = 36f
+                    var gy = topY + 64f
+                    while (gy < bottomY - 24f) {
+                        canvas.drawLine(32f, gy, page.widthPt - 32f, gy, minorGridPaint)
+                        gy += lineSpacing
+                    }
+                }
+                PaperTemplate.BLANK -> {
+                    // Düz boş kağıt
+                }
             }
 
-            var row = 0
-            var gy = topY + gridStep
-            while (gy < bottomY) {
-                val isMajor = row % 5 == 0
-                canvas.drawLine(
-                    0f,
-                    gy,
-                    page.widthPt,
-                    gy,
-                    if (isMajor) majorGridPaint else minorGridPaint
-                )
-                gy += gridStep
-                row++
-            }
-
-            canvas.drawRoundRect(pageRect, 20f, 20f, pageBorderPaint)
+            canvas.drawRoundRect(pageRect, 24f, 24f, pageBorderPaint)
             canvas.drawText(
                 "#${page.pageIndex + 1}",
-                page.widthPt - 64f,
-                topY + 38f,
+                page.widthPt - 58f,
+                topY + 36f,
                 pageLabelPaint
             )
         }
@@ -536,7 +693,7 @@ class NoteEditorCanvasView(
     }
 
     private fun measureFrameFps() {
-        if (!isStrokeInFlight && !isPanning && !isEraserActive) return
+        if (!isStrokeInFlight && !isPanning && !isEraserActive && !isDraggingSelection) return
         val now = System.nanoTime()
         if (lastFrameNano != 0L) {
             val dtMs = (now - lastFrameNano) / 1_000_000f
@@ -582,4 +739,3 @@ class NoteEditorCanvasView(
         return (a shl 24) or (r shl 16) or (g shl 8) or b
     }
 }
-

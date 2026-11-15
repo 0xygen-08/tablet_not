@@ -40,5 +40,8 @@ interface ChatDao {
 
     @Query("UPDATE chat_contacts SET lastMessagePreview = :preview, lastMessageTimeMillis = :timestampMillis, unreadCount = 0 WHERE id = :contactId")
     suspend fun updateContactLastMessage(contactId: String, preview: String, timestampMillis: Long)
+
+    @Query("UPDATE chat_contacts SET unreadCount = 0 WHERE id = :contactId")
+    suspend fun clearUnreadCount(contactId: String)
 }
 

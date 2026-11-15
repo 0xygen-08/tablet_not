@@ -40,6 +40,20 @@ class UndoRedoManagerTest {
         manager.record(EditorCommand.AddStroke(stroke2))
         assertTrue(manager.canUndo)
         assertFalse(manager.canRedo)
+
+        // Seçim modu (Box Selection) taşıma/boyutlandırma ReplaceStrokes komutu testi
+        val movedStroke = stroke2.copy(
+            points = stroke2.points.map { it.copy(x = it.x + 50f, y = it.y + 30f) }
+        )
+        manager.record(
+            EditorCommand.ReplaceStrokes(
+                before = listOf(stroke2),
+                after = listOf(movedStroke)
+            )
+        )
+        val replaceCmd = manager.popUndo() as EditorCommand.ReplaceStrokes
+        assertEquals(10f, replaceCmd.before.first().points.first().x, 0.01f)
+        assertEquals(60f, replaceCmd.after.first().points.first().x, 0.01f)
     }
 }
 

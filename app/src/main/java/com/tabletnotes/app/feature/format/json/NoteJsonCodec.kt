@@ -21,6 +21,9 @@ object NoteJsonCodec {
         append("  \"formatVersion\": ${NoteBinaryCodec.CURRENT_FORMAT_VERSION},\n")
         append("  \"id\": \"${escapeJson(document.id)}\",\n")
         append("  \"title\": \"${escapeJson(document.title)}\",\n")
+        append("  \"courseName\": \"${escapeJson(document.courseName)}\",\n")
+        append("  \"paperColor\": \"${document.paperColor.name}\",\n")
+        append("  \"paperTemplate\": \"${document.paperTemplate.name}\",\n")
         append("  \"createdAtMillis\": ${document.createdAtMillis},\n")
         append("  \"updatedAtMillis\": ${document.updatedAtMillis},\n")
 

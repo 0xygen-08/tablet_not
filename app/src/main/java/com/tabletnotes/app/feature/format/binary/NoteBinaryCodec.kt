@@ -4,6 +4,8 @@ import com.tabletnotes.app.domain.model.DrawingToolType
 import com.tabletnotes.app.domain.model.NoteDocument
 import com.tabletnotes.app.domain.model.NotePage
 import com.tabletnotes.app.domain.model.NoteStroke
+import com.tabletnotes.app.domain.model.PaperColor
+import com.tabletnotes.app.domain.model.PaperTemplate
 import com.tabletnotes.app.domain.model.StrokePoint
 import com.tabletnotes.app.domain.model.TextBlock
 import java.io.ByteArrayInputStream
@@ -180,6 +182,11 @@ object NoteBinaryCodec {
             out.writeInt(block.colorArgb)
             writeUVarInt(out, (block.fontSizeSp * COORD_SCALE).roundToInt().coerceAtLeast(10))
         }
+
+        // Ders Klasörü Adı ve Bağımsız Kağıt Ayarları (Geriye dönük uyumlu ek alanlar)
+        writeString(out, doc.courseName)
+        out.writeByte(doc.paperColor.wireId)
+        out.writeByte(doc.paperTemplate.wireId)
     }
 
     private fun readPayload(
@@ -192,7 +199,10 @@ object NoteBinaryCodec {
         val updatedAtMillis = readUVarLong(inp)
 
         val pageCount = readUVarInt(inp)
-        val pages = ArrayList<NotePage>(pageCount)
+        if (pageCount < 0 || pageCount > 2_000) {
+            throw InvalidNoteFormatException("Geçersiz sayfa sayısı: $pageCount")
+        }
+        val pages = ArrayList<NotePage>(pageCount.coerceAtMost(256))
         for (i in 0 until pageCount) {
             val pageIndex = readUVarInt(inp)
             val widthPt = readUVarInt(inp) / COORD_SCALE
@@ -201,7 +211,10 @@ object NoteBinaryCodec {
         }
 
         val strokeCount = readUVarInt(inp)
-        val strokes = ArrayList<NoteStroke>(strokeCount)
+        if (strokeCount < 0 || strokeCount > 250_000) {
+            throw InvalidNoteFormatException("Geçersiz çizgi sayısı: $strokeCount")
+        }
+        val strokes = ArrayList<NoteStroke>(strokeCount.coerceAtMost(4096))
         for (i in 0 until strokeCount) {
             val strokeId = readString(inp)
             val pageIndex = readUVarInt(inp)
@@ -210,7 +223,10 @@ object NoteBinaryCodec {
             val thickness = readUVarInt(inp) / THICKNESS_SCALE
 
             val pointCount = readUVarInt(inp)
-            val points = ArrayList<StrokePoint>(pointCount)
+            if (pointCount < 0 || pointCount > 100_000) {
+                throw InvalidNoteFormatException("Geçersiz nokta sayısı: $pointCount")
+            }
+            val points = ArrayList<StrokePoint>(pointCount.coerceAtMost(1024))
 
             var qx = 0
             var qy = 0
@@ -252,7 +268,10 @@ object NoteBinaryCodec {
         }
 
         val textBlockCount = readUVarInt(inp)
-        val textBlocks = ArrayList<TextBlock>(textBlockCount)
+        if (textBlockCount < 0 || textBlockCount > 10_000) {
+            throw InvalidNoteFormatException("Geçersiz metin bloğu sayısı: $textBlockCount")
+        }
+        val textBlocks = ArrayList<TextBlock>(textBlockCount.coerceAtMost(256))
         for (i in 0 until textBlockCount) {
             val blockId = readString(inp)
             val pageIndex = readUVarInt(inp)
@@ -276,6 +295,20 @@ object NoteBinaryCodec {
             )
         }
 
+        var courseName = "Fizik"
+        var paperColor = PaperColor.CREAM
+        var paperTemplate = PaperTemplate.DOTTED
+        try {
+            val readCourse = readString(inp)
+            if (readCourse.isNotBlank()) courseName = readCourse
+            val colorId = inp.read()
+            if (colorId >= 0) paperColor = PaperColor.fromWireId(colorId)
+            val templateId = inp.read()
+            if (templateId >= 0) paperTemplate = PaperTemplate.fromWireId(templateId)
+        } catch (_: EOFException) {
+            // Eski v1 dosyalarında bu ek alanlar yoksa varsayılan değerler kullanılır
+        }
+
         return NoteDocument(
             id = id,
             title = title,
@@ -283,7 +316,10 @@ object NoteBinaryCodec {
             strokes = strokes,
             textBlocks = textBlocks,
             createdAtMillis = createdAtMillis,
-            updatedAtMillis = updatedAtMillis
+            updatedAtMillis = updatedAtMillis,
+            courseName = courseName,
+            paperColor = paperColor,
+            paperTemplate = paperTemplate
         )
     }
 

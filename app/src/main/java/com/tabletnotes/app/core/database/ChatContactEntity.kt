@@ -14,20 +14,19 @@ data class ChatContactEntity(
     val lastMessagePreview: String,
     val lastMessageTimeMillis: Long,
     val unreadCount: Int,
-    val isOnline: Boolean
+    val isOnline: Boolean,
+    val isGroup: Boolean = false
 ) {
     fun toDomainModel(): ChatContact = ChatContact(
         id = id,
         displayName = displayName,
-        emailOrHandle(),
+        handleOrEmail = handleOrEmail,
         avatarInitials = avatarInitials,
         publicKeyBase64 = publicKeyBase64,
         lastMessagePreview = lastMessagePreview,
         lastMessageTimeMillis = lastMessageTimeMillis,
         unreadCount = unreadCount,
-        isOnline = isOnline
+        isOnline = isOnline,
+        isGroup = isGroup
     )
-
-    private fun emailOrHandle(): String = handleOrEmail
 }
-

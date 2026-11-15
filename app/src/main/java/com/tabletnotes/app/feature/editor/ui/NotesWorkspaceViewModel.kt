@@ -5,10 +5,14 @@ import androidx.lifecycle.viewModelScope
 import com.tabletnotes.app.core.storage.LowStorageException
 import com.tabletnotes.app.domain.model.NoteDocument
 import com.tabletnotes.app.domain.model.NotePage
+import com.tabletnotes.app.domain.model.PaperColor
+import com.tabletnotes.app.domain.model.PaperTemplate
 import com.tabletnotes.app.domain.repository.NoteRepository
 import com.tabletnotes.app.domain.repository.NoteSummary
 import com.tabletnotes.app.feature.format.json.NoteJsonCodec
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.util.UUID
+import javax.inject.Inject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,8 +21,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import java.util.UUID
-import javax.inject.Inject
 
 sealed interface AutosaveStatus {
     data object Idle : AutosaveStatus
@@ -26,6 +28,11 @@ sealed interface AutosaveStatus {
     data class Saved(val sizeBytes: Long) : AutosaveStatus
     data object LowStorageError : AutosaveStatus
 }
+
+data class CourseFolderItem(
+    val courseName: String,
+    val noteCount: Int
+)
 
 @HiltViewModel
 class NotesWorkspaceViewModel @Inject constructor(
@@ -39,6 +46,14 @@ class NotesWorkspaceViewModel @Inject constructor(
             started = SharingStarted.WhileSubscribed(5_000),
             initialValue = emptyList()
         )
+
+    private val _customCourses = MutableStateFlow(
+        listOf("Fizik", "Kimya", "Mat.", "Tarih", "İng.")
+    )
+    val customCourses: StateFlow<List<String>> = _customCourses.asStateFlow()
+
+    private val _selectedCourseFilter = MutableStateFlow<String?>("Fizik")
+    val selectedCourseFilter: StateFlow<String?> = _selectedCourseFilter.asStateFlow()
 
     private val _isEditorOpen = MutableStateFlow(false)
     val isEditorOpen: StateFlow<Boolean> = _isEditorOpen.asStateFlow()
@@ -58,6 +73,20 @@ class NotesWorkspaceViewModel @Inject constructor(
         }
     }
 
+    fun selectCourseFolder(courseName: String?) {
+        _selectedCourseFilter.value = courseName
+    }
+
+    fun addCourseFolder(newCourseName: String) {
+        val clean = newCourseName.trim()
+        if (clean.isEmpty()) return
+        val current = _customCourses.value
+        if (current.none { it.equals(clean, ignoreCase = true) }) {
+            _customCourses.value = current + clean
+        }
+        _selectedCourseFilter.value = clean
+    }
+
     fun openExistingNote(noteId: String) {
         viewModelScope.launch {
             val loaded = noteRepository.loadNoteDocument(noteId)
@@ -70,13 +99,21 @@ class NotesWorkspaceViewModel @Inject constructor(
         }
     }
 
-    fun createAndOpenNewNote(defaultTitlePrefix: String) {
+    fun createAndOpenNewNote(
+        defaultTitlePrefix: String,
+        targetCourse: String? = null
+    ) {
         viewModelScope.launch {
             val now = System.currentTimeMillis()
-            val nextNumber = noteSummaries.value.size + 1
+            val course = (targetCourse ?: _selectedCourseFilter.value ?: "Fizik").ifBlank { "Fizik" }
+            addCourseFolder(course)
+            val nextNumber = noteSummaries.value.count { it.courseName.equals(course, ignoreCase = true) } + 1
             val newDoc = NoteDocument(
                 id = "note_${UUID.randomUUID().toString().take(8)}",
                 title = String.format(defaultTitlePrefix, nextNumber),
+                courseName = course,
+                paperColor = PaperColor.CREAM,
+                paperTemplate = PaperTemplate.DOTTED,
                 pages = listOf(NotePage(0), NotePage(1)),
                 strokes = emptyList(),
                 textBlocks = emptyList(),
@@ -92,7 +129,6 @@ class NotesWorkspaceViewModel @Inject constructor(
     fun closeEditorAndSaveImmediately() {
         autosaveJob?.cancel()
         val snapshot = editorController.toNoteDocument()
-        // Geri tuşuna basıldığı anda beklemeden anında Notlar ekranına dön (0 ms gecikme)
         _isEditorOpen.value = false
         viewModelScope.launch {
             try {
@@ -102,6 +138,18 @@ class NotesWorkspaceViewModel @Inject constructor(
                 _autosaveStatus.value = AutosaveStatus.LowStorageError
             } catch (_: Exception) {
                 _autosaveStatus.value = AutosaveStatus.Idle
+            }
+        }
+    }
+
+    fun saveNowAndGetSummary(onSaved: (NoteSummary) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val snapshot = editorController.toNoteDocument()
+                val summary = noteRepository.saveNoteDocumentAtomically(snapshot)
+                _autosaveStatus.value = AutosaveStatus.Saved(summary.fileSizeBytes)
+                onSaved(summary)
+            } catch (_: Exception) {
             }
         }
     }
@@ -139,4 +187,3 @@ class NotesWorkspaceViewModel @Inject constructor(
         }
     }
 }
-

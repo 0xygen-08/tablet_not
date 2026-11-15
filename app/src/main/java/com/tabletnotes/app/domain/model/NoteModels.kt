@@ -5,23 +5,94 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Editörde kullanılan çizim ve düzenleme araçları.
+ * Editörde kullanılan çizim, boyama ve seçim araçları (Samsung Notes tarzı).
  */
 enum class DrawingToolType(val wireId: Int) {
-    PEN(0),
-    HIGHLIGHTER(1),
-    ERASER(2),
-    TEXT(3);
+    PEN(0),               // Tükenmez / Standart Kalem
+    HIGHLIGHTER(1),       // Fosforlu Kalem
+    ERASER(2),            // Çizgi Silgisi
+    TEXT(3),              // Metin Kutusu
+    FINE_FOUNTAIN(4),     // İnce Dolma Kalem (Yüksek basınç hassasiyeti)
+    CALLIGRAPHY(5),       // Kalın Dolma / Kaligrafi Kalemi (Kesik uç açılı)
+    PENCIL(6),            // Kurşun Kalem (Dokulu grafit hissi)
+    MARKER(7),            // Marker Kalem (Dolgun keçe uç)
+    WATERCOLOR(8),        // Sulu Boya Fırçası (Yumuşak yarı saydam katmanlı)
+    LASSO_SELECT(9);      // Kare Seçim Modu (Taşıma, Kopyalama, Boyutlandırma, Silme)
+
+    val isPenVariant: Boolean
+        get() = this == PEN ||
+            this == FINE_FOUNTAIN ||
+            this == CALLIGRAPHY ||
+            this == PENCIL ||
+            this == MARKER ||
+            this == WATERCOLOR
 
     companion object {
+        val penVariants: List<DrawingToolType> = listOf(
+            FINE_FOUNTAIN,
+            CALLIGRAPHY,
+            PEN,
+            PENCIL,
+            MARKER,
+            WATERCOLOR
+        )
+
         fun fromWireId(id: Int): DrawingToolType =
             entries.firstOrNull { it.wireId == id } ?: PEN
     }
 }
 
 /**
+ * Uygulama temasından bağımsız (Independent) Kağıt Arka Plan Rengi.
+ */
+enum class PaperColor(
+    val wireId: Int,
+    val bgArgb: Int,
+    val minorPatternArgb: Int,
+    val majorPatternArgb: Int
+) {
+    CREAM(
+        wireId = 0,
+        bgArgb = 0xFFFAF7EE.toInt(),
+        minorPatternArgb = 0xFFD9D3C4.toInt(),
+        majorPatternArgb = 0xFFC5BEB0.toInt()
+    ),
+    WHITE(
+        wireId = 1,
+        bgArgb = 0xFFFFFFFF.toInt(),
+        minorPatternArgb = 0xFFDCE1EC.toInt(),
+        majorPatternArgb = 0xFFC5CEE0.toInt()
+    ),
+    DARK(
+        wireId = 2,
+        bgArgb = 0xFF161925.toInt(),
+        minorPatternArgb = 0xFF2B3147.toInt(),
+        majorPatternArgb = 0xFF38405C.toInt()
+    );
+
+    companion object {
+        fun fromWireId(id: Int): PaperColor =
+            entries.firstOrNull { it.wireId == id } ?: CREAM
+    }
+}
+
+/**
+ * Kağıt Deseni / Şablonu (Noktalı, Kareli, Çizgili, Düz Boş).
+ */
+enum class PaperTemplate(val wireId: Int) {
+    DOTTED(0),
+    GRID(1),
+    LINED(2),
+    BLANK(3);
+
+    companion object {
+        fun fromWireId(id: Int): PaperTemplate =
+            entries.firstOrNull { it.wireId == id } ?: DOTTED
+    }
+}
+
+/**
  * Tek bir kalem/dokunuş örnekleme noktası (sample point).
- * Koordinatlar sayfa/belge uzayındadır (float); basınç (0..1), eğim (radyan) ve zaman damgası içerir.
  */
 @Immutable
 data class StrokePoint(
@@ -46,6 +117,8 @@ data class BoundingBox(
 ) {
     val width: Float get() = max(0f, maxX - minX)
     val height: Float get() = max(0f, maxY - minY)
+    val centerX: Float get() = (minX + maxX) * 0.5f
+    val centerY: Float get() = (minY + maxY) * 0.5f
 
     fun intersects(other: BoundingBox): Boolean {
         return minX <= other.maxX &&
@@ -86,13 +159,26 @@ data class BoundingBox(
                 maxY = maxY + padding
             )
         }
+
+        fun union(boxes: List<BoundingBox>): BoundingBox? {
+            if (boxes.isEmpty()) return null
+            var minX = Float.POSITIVE_INFINITY
+            var minY = Float.POSITIVE_INFINITY
+            var maxX = Float.NEGATIVE_INFINITY
+            var maxY = Float.NEGATIVE_INFINITY
+            for (b in boxes) {
+                if (b.minX < minX) minX = b.minX
+                if (b.minY < minY) minY = b.minY
+                if (b.maxX > maxX) maxX = b.maxX
+                if (b.maxY > maxY) maxY = b.maxY
+            }
+            return BoundingBox(minX, minY, maxX, maxY)
+        }
     }
 }
 
 /**
  * Tamamlanmış (committed) bir vektör çizgi (Stroke).
- * Her çizgi; sayfa numarasını, aracını (Kalem / Fosforlu), rengini (ARGB),
- * taban kalınlığını ve tüm nokta dizisini saklar.
  */
 @Immutable
 data class NoteStroke(
@@ -134,15 +220,9 @@ data class NotePage(
         const val DEFAULT_PAGE_HEIGHT = 1200f
         const val PAGE_GAP = 32f
 
-        /**
-         * Verilen sayfanın belge (document) koordinatlarındaki dikey başlangıç Y değerini döndürür.
-         */
         fun pageTopY(pageIndex: Int): Float =
             pageIndex * (DEFAULT_PAGE_HEIGHT + PAGE_GAP)
 
-        /**
-         * Belge Y koordinatının hangi sayfaya denk geldiğini hesaplar.
-         */
         fun pageIndexAtY(docY: Float, totalPages: Int): Int {
             val stride = DEFAULT_PAGE_HEIGHT + PAGE_GAP
             val raw = (docY / stride).toInt()
@@ -152,7 +232,7 @@ data class NotePage(
 }
 
 /**
- * Bir not belgesinin tüm vektör verisi (çizgiler, metin kutuları ve sayfa yapısı).
+ * Bir not belgesinin tüm vektör verisi (çizgiler, metin kutuları, sayfa yapısı, ders klasörü ve kağıt ayarları).
  */
 @Immutable
 data class NoteDocument(
@@ -162,6 +242,8 @@ data class NoteDocument(
     val strokes: List<NoteStroke>,
     val textBlocks: List<TextBlock>,
     val createdAtMillis: Long,
-    val updatedAtMillis: Long
+    val updatedAtMillis: Long,
+    val courseName: String = "Fizik",
+    val paperColor: PaperColor = PaperColor.CREAM,
+    val paperTemplate: PaperTemplate = PaperTemplate.DOTTED
 )
-

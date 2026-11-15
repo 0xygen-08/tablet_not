@@ -35,7 +35,8 @@ data class ChatContact(
     val lastMessagePreview: String,
     val lastMessageTimeMillis: Long,
     val unreadCount: Int = 0,
-    val isOnline: Boolean = true
+    val isOnline: Boolean = true,
+    val isGroup: Boolean = false
 )
 
 data class NoteAttachmentMeta(
