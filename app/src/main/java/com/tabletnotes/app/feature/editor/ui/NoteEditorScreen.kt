@@ -35,23 +35,25 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.AutoFixNormal
 import androidx.compose.material.icons.filled.BorderColor
 import androidx.compose.material.icons.filled.Brush
+import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.IosShare
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.PanToolAlt
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.TextFields
@@ -90,21 +92,24 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.tabletnotes.app.R
 import com.tabletnotes.app.core.designsystem.theme.TabletNotesTheme
 import com.tabletnotes.app.domain.model.DrawingToolType
+import com.tabletnotes.app.domain.model.EraserMode
 import com.tabletnotes.app.domain.model.PaperColor
 import com.tabletnotes.app.domain.model.PaperTemplate
+import com.tabletnotes.app.domain.repository.NoteSummary
 import java.util.Locale
 import kotlin.math.roundToInt
 
 private val FullColorPalette = listOf(
-    0xFFDC4C46.toInt(), // Mercan Kırmızı (Taslak 1. Renk)
-    0xFF2B63D9.toInt(), // Kraliyet Mavisi (Taslak 2. Renk)
-    0xFF1A1C23.toInt(), // Koyu Mürekkep Siyahı (Taslak 3. Renk)
+    0xFFDC4C46.toInt(), // Mercan Kırmızı
+    0xFF2B63D9.toInt(), // Kraliyet Mavisi
+    0xFF1A1C23.toInt(), // Koyu Mürekkep Siyahı
     0xFF16794B.toInt(), // Zümrüt Yeşili
     0xFF6B38E8.toInt(), // Mor / Lavanta
     0xFFFA8C16.toInt(), // Kehribar Turuncu
@@ -120,6 +125,10 @@ private val FullColorPalette = listOf(
 fun NoteEditorScreen(
     controller: NoteEditorController,
     autosaveStatus: AutosaveStatus,
+    courseNotes: List<NoteSummary>,
+    onSwitchSubNote: (String) -> Unit,
+    onCreateSubNote: () -> Unit,
+    onDeleteSubNote: (String) -> Unit,
     onRequestJsonDebug: () -> String,
     onCycleTheme: () -> Unit,
     onNavigateBack: () -> Unit,
@@ -140,7 +149,10 @@ fun NoteEditorScreen(
     var pendingTitleValue by rememberSaveable { mutableStateOf(controller.noteTitle) }
     var pendingCourseValue by rememberSaveable { mutableStateOf(controller.courseName) }
 
+    var showSubNotesMenu by remember { mutableStateOf(false) }
     var showPenPopover by remember { mutableStateOf(false) }
+    var showLaserMenu by remember { mutableStateOf(false) }
+    var showEraserMenu by remember { mutableStateOf(false) }
     var showColorCustomDialog by remember { mutableStateOf(false) }
     var showPaperSettingsDialog by remember { mutableStateOf(false) }
     var showMoreMenu by remember { mutableStateOf(false) }
@@ -156,13 +168,12 @@ fun NoteEditorScreen(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // 1. ÜST BAŞLIK ÇUBUĞU (Taslak 3 ile birebir: Sol < Geri | Orta "Fizik › Vektörler" Pill | Sağ Paylaş & Menü)
+        // 1. ÜST BAŞLIK ÇUBUĞU: Sol < Geri | Orta "Ders › Alt Not" Pill | Odak | Paylaş | ≡ Menü
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Sol Yuvarlak Geri (<) Butonu (38dp tablet boyutu)
             Surface(
                 onClick = onNavigateBack,
                 shape = CircleShape,
@@ -180,7 +191,6 @@ fun NoteEditorScreen(
                 }
             }
 
-            // Orta Breadcrumb Pill: "Fizik › Vektörler" + Kayıt Durumu Noktası
             Surface(
                 onClick = {
                     pendingTitleValue = controller.noteTitle
@@ -214,14 +224,14 @@ fun NoteEditorScreen(
                             }
                         },
                         style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 1
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
 
                     AutosaveDotIndicator(status = autosaveStatus)
                 }
             }
 
-            // Odak Modu (Focus Mode — Yüzen Araç Çubuğunu Gizle/Göster)
             Surface(
                 onClick = { controller.isFocusMode = !controller.isFocusMode },
                 shape = CircleShape,
@@ -239,7 +249,6 @@ fun NoteEditorScreen(
                 }
             }
 
-            // Sağ Paylaş / Dışa Aktar (↑) Butonu (Taslak 3 ile birebir)
             Surface(
                 onClick = { onShareNoteRequest?.invoke() },
                 shape = CircleShape,
@@ -257,7 +266,7 @@ fun NoteEditorScreen(
                 }
             }
 
-            // Sağ Üç Çizgi (≡) Menü Butonu (Kağıt Ayarları, Sayfa Ekleme, Geliştirici/Binary Araçlar burada)
+            // Sağ Üç Çizgi (≡) Menü Butonu (Yakınlaştırma Sıfırla, Parmak+Kalem ve Sayfa Temizle kaldırıldı)
             Box {
                 Surface(
                     onClick = { showMoreMenu = true },
@@ -293,38 +302,7 @@ fun NoteEditorScreen(
                         leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) },
                         onClick = {
                             showMoreMenu = false
-                            controller.addPage()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                if (controller.stylusOnlyMode) {
-                                    stringResource(R.string.editor_tool_stylus_only) + " ✓"
-                                } else {
-                                    stringResource(R.string.editor_tool_finger_draw)
-                                }
-                            )
-                        },
-                        leadingIcon = { Icon(Icons.Default.PanToolAlt, contentDescription = null) },
-                        onClick = {
-                            showMoreMenu = false
-                            controller.stylusOnlyMode = !controller.stylusOnlyMode
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                stringResource(
-                                    R.string.editor_zoom_reset,
-                                    (controller.zoom * 100).roundToInt()
-                                )
-                            )
-                        },
-                        leadingIcon = { Icon(Icons.Default.ZoomIn, contentDescription = null) },
-                        onClick = {
-                            showMoreMenu = false
-                            controller.resetZoomAndPan()
+                            controller.addPage(scrollToNewPage = true)
                         }
                     )
                     DropdownMenuItem(
@@ -333,14 +311,6 @@ fun NoteEditorScreen(
                         onClick = {
                             showMoreMenu = false
                             onCycleTheme()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.editor_clear_canvas)) },
-                        leadingIcon = { Icon(Icons.Default.DeleteOutline, contentDescription = null) },
-                        onClick = {
-                            showMoreMenu = false
-                            controller.clearAll()
                         }
                     )
                     HorizontalDivider()
@@ -366,42 +336,154 @@ fun NoteEditorScreen(
             }
         }
 
-        // 2. SAMSUNG NOTES TARZI KOMPAKT YÜZEN ARAÇ ÇUBUĞU (Odak Modunda Gizlenebilir — 42dp yükseklik)
-        AnimatedVisibility(
-            visible = !controller.isFocusMode,
-            enter = fadeIn() + slideInVertically(),
-            exit = fadeOut() + slideOutVertically()
+        // 2. SOL ALT NOTLAR BUTONU + SAMSUNG NOTES TARZI KOMPAKT YÜZEN ARAÇ ÇUBUĞU
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            // Sol Geri Tuşunun Hemen Altındaki Klasör Alt Notları Butonu
+            Box {
+                Surface(
+                    onClick = { showSubNotesMenu = true },
+                    shape = CircleShape,
+                    color = palette.surfaceElevated,
+                    border = BorderStroke(1.dp, palette.borderSubtle),
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.FolderOpen,
+                            contentDescription = stringResource(R.string.editor_subnotes_btn),
+                            tint = palette.primaryAccent,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                DropdownMenu(
+                    expanded = showSubNotesMenu,
+                    onDismissRequest = { showSubNotesMenu = false },
+                    modifier = Modifier.width(300.dp)
+                ) {
+                    Text(
+                        text = "${controller.courseName} • Alt Notlar (${courseNotes.size})",
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                        color = palette.textPrimary,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                    )
+                    HorizontalDivider()
+
+                    courseNotes.forEach { summary ->
+                        val isCurrent = summary.id == controller.noteId
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(
+                                        text = summary.title,
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium
+                                        ),
+                                        color = if (isCurrent) palette.primaryAccent else palette.textPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "${summary.pageCount} sayfa",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = palette.textMuted
+                                    )
+                                }
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = if (isCurrent) Icons.Default.Check else Icons.Default.Description,
+                                    contentDescription = null,
+                                    tint = if (isCurrent) palette.primaryAccent else palette.textSecondary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            trailingIcon = {
+                                if (courseNotes.size > 1 || !isCurrent) {
+                                    IconButton(
+                                        onClick = {
+                                            showSubNotesMenu = false
+                                            onDeleteSubNote(summary.id)
+                                        },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.DeleteOutline,
+                                            contentDescription = stringResource(R.string.notes_delete_note),
+                                            tint = palette.textMuted,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            },
+                            onClick = {
+                                showSubNotesMenu = false
+                                if (!isCurrent) {
+                                    onSwitchSubNote(summary.id)
+                                }
+                            }
+                        )
+                    }
+
+                    HorizontalDivider()
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = stringResource(R.string.editor_subnotes_new),
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                color = palette.primaryAccent
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Default.Add, contentDescription = null, tint = palette.primaryAccent)
+                        },
+                        onClick = {
+                            showSubNotesMenu = false
+                            onCreateSubNote()
+                        }
+                    )
+                }
+            }
+
+            // Kompakt Araç Çubuğu (Odak Modunda Gizlenebilir)
+            AnimatedVisibility(
+                visible = !controller.isFocusMode,
+                enter = fadeIn() + slideInVertically(),
+                exit = fadeOut() + slideOutVertically(),
+                modifier = Modifier.weight(1f)
+            ) {
                 Surface(
                     shape = CircleShape,
                     color = palette.surfaceElevated,
                     border = BorderStroke(1.dp, palette.borderSubtle),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(44.dp)
+                        .height(42.dp)
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(horizontal = 12.dp)
+                            .padding(horizontal = 10.dp)
                             .horizontalScroll(rememberScrollState()),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        // SOL & ORTA: Samsung Notes Sıralamasıyla Araçlar + 3 Hızlı Erişim Rengi
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            // 1) Kalem Çeşidi Seçici (İnce Dolma, Kalın Dolma, Tükenmez, Kurşun, Marker, Sulu Boya)
+                            // 1) Basit Kalem İkonu Butonu (2. tıkta Kalem Çeşitleri menüsü açılır)
                             Box {
                                 val isPenActive = controller.activeTool.isPenVariant
-                                CompactToolbarButton(
-                                    icon = penIconFor(controller.lastPenVariant),
-                                    label = penShortNameFor(controller.lastPenVariant),
+                                CompactToolbarIconButton(
+                                    icon = Icons.Default.Edit,
+                                    contentDescription = penFullNameFor(controller.lastPenVariant),
                                     selected = isPenActive,
-                                    showDropdownChevron = true,
                                     onClick = {
                                         if (isPenActive) {
                                             showPenPopover = true
@@ -498,15 +580,125 @@ fun NoteEditorScreen(
                                 onClick = { controller.selectTool(DrawingToolType.HIGHLIGHTER) }
                             )
 
-                            // 3) Silgi (Eraser)
+                            // 3) Silgi (2. tıkta Çizgi Silgisi / Alan Silgisi + Boyut menüsü)
+                            Box {
+                                val isEraserSelected = controller.activeTool == DrawingToolType.ERASER
+                                CompactToolbarIconButton(
+                                    icon = Icons.Default.AutoFixNormal,
+                                    contentDescription = stringResource(R.string.editor_tool_eraser),
+                                    selected = isEraserSelected,
+                                    onClick = {
+                                        if (isEraserSelected) {
+                                            showEraserMenu = true
+                                        } else {
+                                            controller.selectTool(DrawingToolType.ERASER)
+                                        }
+                                    }
+                                )
+
+                                DropdownMenu(
+                                    expanded = showEraserMenu,
+                                    onDismissRequest = { showEraserMenu = false },
+                                    modifier = Modifier.width(280.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text(
+                                            text = stringResource(R.string.editor_tool_eraser),
+                                            style = MaterialTheme.typography.titleSmall,
+                                            color = palette.textPrimary
+                                        )
+                                        EraserOptionRow(
+                                            label = stringResource(R.string.editor_eraser_stroke_mode),
+                                            selected = controller.eraserMode == EraserMode.STROKE_ERASER,
+                                            onClick = { controller.eraserMode = EraserMode.STROKE_ERASER }
+                                        )
+                                        EraserOptionRow(
+                                            label = stringResource(R.string.editor_eraser_area_mode),
+                                            selected = controller.eraserMode == EraserMode.AREA_ERASER,
+                                            onClick = { controller.eraserMode = EraserMode.AREA_ERASER }
+                                        )
+
+                                        HorizontalDivider()
+
+                                        Text(
+                                            text = stringResource(
+                                                R.string.editor_eraser_size_label,
+                                                controller.eraserRadius.roundToInt()
+                                            ),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = palette.textSecondary
+                                        )
+                                        Slider(
+                                            value = controller.eraserRadius,
+                                            onValueChange = { controller.eraserRadius = it },
+                                            valueRange = 8f..60f
+                                        )
+                                    }
+                                }
+                            }
+
+                            // 4) Lazer İşaretçi (2. tıkta ekranda kalma süresini seçme menüsü)
+                            Box {
+                                val isLaserSelected = controller.activeTool == DrawingToolType.LASER_POINTER
+                                CompactToolbarIconButton(
+                                    icon = Icons.Default.AutoAwesome,
+                                    contentDescription = stringResource(R.string.editor_tool_laser),
+                                    selected = isLaserSelected,
+                                    onClick = {
+                                        if (isLaserSelected) {
+                                            showLaserMenu = true
+                                        } else {
+                                            controller.selectTool(DrawingToolType.LASER_POINTER)
+                                        }
+                                    }
+                                )
+
+                                DropdownMenu(
+                                    expanded = showLaserMenu,
+                                    onDismissRequest = { showLaserMenu = false },
+                                    modifier = Modifier.width(230.dp)
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.editor_laser_duration_title),
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = palette.textPrimary,
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                                    )
+                                    HorizontalDivider()
+                                    listOf(
+                                        1500L to "1.5 Saniye",
+                                        3000L to "3 Saniye",
+                                        5000L to "5 Saniye",
+                                        10000L to "10 Saniye"
+                                    ).forEach { (durationMs, label) ->
+                                        DropdownMenuItem(
+                                            text = { Text(label) },
+                                            trailingIcon = {
+                                                if (controller.laserDurationMillis == durationMs) {
+                                                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                }
+                                            },
+                                            onClick = {
+                                                controller.laserDurationMillis = durationMs
+                                                showLaserMenu = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+
+                            // 5) Şekil Algılama ve Düzeltme Modu
                             CompactToolbarIconButton(
-                                icon = Icons.Default.AutoFixNormal,
-                                contentDescription = stringResource(R.string.editor_tool_eraser),
-                                selected = controller.activeTool == DrawingToolType.ERASER,
-                                onClick = { controller.selectTool(DrawingToolType.ERASER) }
+                                icon = Icons.Default.Category,
+                                contentDescription = stringResource(R.string.editor_tool_shape),
+                                selected = controller.activeTool == DrawingToolType.SHAPE_TOOL,
+                                onClick = { controller.selectTool(DrawingToolType.SHAPE_TOOL) }
                             )
 
-                            // 4) Kare Seçim Modu (Lasso / Box Selection: Taşıma, Kopyalama, Boyutlandırma)
+                            // 6) Kare Seçim Modu (Lasso / Box Selection)
                             CompactToolbarIconButton(
                                 icon = Icons.Default.SelectAll,
                                 contentDescription = stringResource(R.string.editor_tool_lasso),
@@ -514,7 +706,7 @@ fun NoteEditorScreen(
                                 onClick = { controller.selectTool(DrawingToolType.LASSO_SELECT) }
                             )
 
-                            // 5) Metin Kutusu (Text)
+                            // 7) Metin Kutusu (Text)
                             CompactToolbarIconButton(
                                 icon = Icons.Default.TextFields,
                                 contentDescription = stringResource(R.string.editor_tool_text),
@@ -524,12 +716,12 @@ fun NoteEditorScreen(
 
                             Spacer(modifier = Modifier.width(4.dp))
 
-                            // 6) 3 Hızlı Erişim Renk Tuşu (Taslak 3'teki Kırmızı, Mavi, Siyah Yuvarlaklar)
+                            // 8) 3 Hızlı Erişim Renk Tuşu
                             controller.favoriteColors.forEachIndexed { slotIdx, colorArgb ->
                                 val isSlotSelected = controller.selectedColorArgb == colorArgb
                                 Box(
                                     modifier = Modifier
-                                        .size(if (isSlotSelected) 26.dp else 22.dp)
+                                        .size(if (isSlotSelected) 25.dp else 21.dp)
                                         .clip(CircleShape)
                                         .background(Color(colorArgb))
                                         .border(
@@ -546,7 +738,7 @@ fun NoteEditorScreen(
                             // Hızlı Renk Özelleştirme / Renk Paleti Butonu
                             IconButton(
                                 onClick = { showColorCustomDialog = true },
-                                modifier = Modifier.size(30.dp)
+                                modifier = Modifier.size(28.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Palette,
@@ -557,7 +749,7 @@ fun NoteEditorScreen(
                             }
                         }
 
-                        // SAĞ: Geri Al (Undo ↶) & İleri Al (Redo ↷) (Taslak 3 & Samsung Notes)
+                        // SAĞ: Geri Al (Undo) & İleri Al (Redo)
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(2.dp)
@@ -565,7 +757,7 @@ fun NoteEditorScreen(
                             IconButton(
                                 onClick = { controller.undo() },
                                 enabled = controller.canUndo,
-                                modifier = Modifier.size(34.dp)
+                                modifier = Modifier.size(32.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.Undo,
@@ -577,7 +769,7 @@ fun NoteEditorScreen(
                             IconButton(
                                 onClick = { controller.redo() },
                                 enabled = controller.canRedo,
-                                modifier = Modifier.size(34.dp)
+                                modifier = Modifier.size(32.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.Redo,
@@ -589,76 +781,115 @@ fun NoteEditorScreen(
                         }
                     }
                 }
+            }
+        }
 
-                // Seçim Modu Aktifken ve Çizgi Seçildiyse Çıkan Bağlamsal Eylem Çubuğu (Taşı, Kopyala, Boyutlandır, Sil)
-                if (controller.selectedStrokeIds.isNotEmpty()) {
-                    Surface(
-                        shape = CircleShape,
-                        color = palette.surfaceElevated,
-                        border = BorderStroke(1.dp, palette.primaryAccent),
-                        modifier = Modifier.align(Alignment.CenterHorizontally)
+        // Seçim Modu Aktifken Çıkan Eylem Çubuğu
+        AnimatedVisibility(visible = !controller.isFocusMode && controller.selectedStrokeIds.isNotEmpty()) {
+            Surface(
+                shape = CircleShape,
+                color = palette.surfaceElevated,
+                border = BorderStroke(1.dp, palette.primaryAccent),
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                        .horizontalScroll(rememberScrollState()),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    TextButton(
+                        onClick = { controller.duplicateSelectedStrokes() },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .padding(horizontal = 12.dp, vertical = 4.dp)
-                                .horizontalScroll(rememberScrollState()),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(15.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(stringResource(R.string.editor_selection_duplicate), style = MaterialTheme.typography.labelMedium)
+                    }
+                    TextButton(
+                        onClick = { controller.scaleSelectedStrokes(1.18f) },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Icon(Icons.Default.ZoomIn, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(stringResource(R.string.editor_selection_scale_up), style = MaterialTheme.typography.labelMedium)
+                    }
+                    TextButton(
+                        onClick = { controller.scaleSelectedStrokes(0.84f) },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Icon(Icons.Default.ZoomOut, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(stringResource(R.string.editor_selection_scale_down), style = MaterialTheme.typography.labelMedium)
+                    }
+                    TextButton(
+                        onClick = { controller.deleteSelectedStrokes() },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.DeleteOutline,
+                            contentDescription = null,
+                            tint = palette.secondaryAccent,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            stringResource(R.string.editor_selection_delete),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = palette.secondaryAccent
+                        )
+                    }
+                    TextButton(
+                        onClick = { controller.clearSelection() },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Text(stringResource(R.string.editor_selection_clear), style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+        }
+
+        // Bekleyen Algılanmış Şekil Varsa Onay / Boyut Eylem Çubuğu
+        val pendingShape = controller.pendingShape
+        AnimatedVisibility(visible = !controller.isFocusMode && pendingShape != null) {
+            if (pendingShape != null) {
+                Surface(
+                    shape = CircleShape,
+                    color = palette.surfaceElevated,
+                    border = BorderStroke(1.dp, palette.primaryAccent),
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Algılanan Şekil: ${pendingShape.labelTr}",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = palette.primaryAccent
+                        )
+                        TextButton(
+                            onClick = { controller.confirmPendingShape() },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                         ) {
-                            TextButton(
-                                onClick = { controller.duplicateSelectedStrokes() },
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                            ) {
-                                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(15.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(stringResource(R.string.editor_selection_duplicate), style = MaterialTheme.typography.labelMedium)
-                            }
-                            TextButton(
-                                onClick = { controller.scaleSelectedStrokes(1.18f) },
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                            ) {
-                                Icon(Icons.Default.ZoomIn, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(stringResource(R.string.editor_selection_scale_up), style = MaterialTheme.typography.labelMedium)
-                            }
-                            TextButton(
-                                onClick = { controller.scaleSelectedStrokes(0.84f) },
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                            ) {
-                                Icon(Icons.Default.ZoomOut, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(stringResource(R.string.editor_selection_scale_down), style = MaterialTheme.typography.labelMedium)
-                            }
-                            TextButton(
-                                onClick = { controller.deleteSelectedStrokes() },
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.DeleteOutline,
-                                    contentDescription = null,
-                                    tint = palette.secondaryAccent,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    stringResource(R.string.editor_selection_delete),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = palette.secondaryAccent
-                                )
-                            }
-                            TextButton(
-                                onClick = { controller.clearSelection() },
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                            ) {
-                                Text(stringResource(R.string.editor_selection_clear), style = MaterialTheme.typography.labelMedium)
-                            }
+                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Onayla", style = MaterialTheme.typography.labelMedium)
+                        }
+                        TextButton(
+                            onClick = { controller.discardPendingShape() },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Text("İptal", style = MaterialTheme.typography.labelMedium, color = palette.secondaryAccent)
                         }
                     }
                 }
             }
         }
 
-        // 3. ANA DÜŞÜK GECİKMELİ KAĞIT TUVALİ
+        // 3. ANA DÜŞÜK GECİKMELİ KAĞIT TUVALİ + SAĞ ÜST YAKINLIK YÜZDESİ
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -689,7 +920,24 @@ fun NoteEditorScreen(
                 }
             )
 
-            // Yalnızca Geliştirici Stres Testi açıldığında sağ altta kompakt FPS göstergesi
+            // Sayfanın Sağ Üstünde Yüzdelik Yakınlaştırma Göstergesi (Dokunulduğunda %100'e sıfırlar)
+            Surface(
+                onClick = { controller.resetZoomAndPan() },
+                color = palette.surfaceElevated.copy(alpha = 0.88f),
+                shape = CircleShape,
+                border = BorderStroke(1.dp, palette.borderSubtle),
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(14.dp)
+            ) {
+                Text(
+                    text = "%${(controller.zoom * 100).roundToInt()}",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = palette.textPrimary,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+            }
+
             if (showDevHud) {
                 Surface(
                     color = palette.surfaceElevated.copy(alpha = 0.92f),
@@ -715,12 +963,13 @@ fun NoteEditorScreen(
         }
     }
 
-    // --- DİYALOGLAR ---
+    // --- DİYALOGLAR (Tamamı 24dp yuvarlatılmış dikdörtgen formunda!) ---
 
-    // 1. Not Başlığı ve Ders Klasörü Düzenleme Diyaloğu
     if (showTitleDialog) {
         AlertDialog(
             onDismissRequest = { showTitleDialog = false },
+            shape = RoundedCornerShape(24.dp),
+            containerColor = palette.surfaceElevated,
             title = { Text(stringResource(R.string.editor_edit_title_dialog)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -761,10 +1010,11 @@ fun NoteEditorScreen(
         )
     }
 
-    // 2. Bağımsız Kağıt Rengi ve Deseni Diyaloğu (Uygulama temasından bağımsız: Krem/Beyaz/Koyu & Noktalı/Kareli/Çizgili/Düz)
     if (showPaperSettingsDialog) {
         AlertDialog(
             onDismissRequest = { showPaperSettingsDialog = false },
+            shape = RoundedCornerShape(24.dp),
+            containerColor = palette.surfaceElevated,
             title = { Text(stringResource(R.string.editor_paper_settings_title)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -836,10 +1086,11 @@ fun NoteEditorScreen(
         )
     }
 
-    // 3. Hızlı Erişim Rengi Özelleştirme Diyaloğu
     if (showColorCustomDialog) {
         AlertDialog(
             onDismissRequest = { showColorCustomDialog = false },
+            shape = RoundedCornerShape(24.dp),
+            containerColor = palette.surfaceElevated,
             title = { Text(stringResource(R.string.editor_color_picker_title)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -883,10 +1134,11 @@ fun NoteEditorScreen(
         )
     }
 
-    // 4. Metin Kutusu Ekleme / Düzenleme Diyaloğu
     if (showTextDialog) {
         AlertDialog(
             onDismissRequest = { showTextDialog = false },
+            shape = RoundedCornerShape(24.dp),
+            containerColor = palette.surfaceElevated,
             title = { Text(text = stringResource(R.string.editor_text_dialog_title)) },
             text = {
                 OutlinedTextField(
@@ -934,10 +1186,11 @@ fun NoteEditorScreen(
         )
     }
 
-    // 5. Geliştirici JSON & Binary Özeti Diyaloğu (Üç Çizgi Menüsünden Açılır)
     if (showJsonDebugDialog) {
         AlertDialog(
             onDismissRequest = { showJsonDebugDialog = false },
+            shape = RoundedCornerShape(24.dp),
+            containerColor = palette.surfaceElevated,
             title = { Text(text = stringResource(R.string.editor_json_debug_title)) },
             text = {
                 Surface(
@@ -973,6 +1226,43 @@ fun NoteEditorScreen(
 }
 
 @Composable
+private fun EraserOptionRow(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val palette = TabletNotesTheme.palette
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(12.dp),
+        color = if (selected) palette.primaryAccent.copy(alpha = 0.16f) else Color.Transparent,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (selected) palette.primaryAccent else palette.textPrimary
+            )
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = null,
+                    tint = palette.primaryAccent,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun AutosaveDotIndicator(status: AutosaveStatus) {
     val palette = TabletNotesTheme.palette
     val dotColor = when (status) {
@@ -987,49 +1277,6 @@ private fun AutosaveDotIndicator(status: AutosaveStatus) {
             .clip(CircleShape)
             .background(dotColor)
     )
-}
-
-@Composable
-private fun CompactToolbarButton(
-    icon: ImageVector,
-    label: String,
-    selected: Boolean,
-    showDropdownChevron: Boolean = false,
-    onClick: () -> Unit
-) {
-    val palette = TabletNotesTheme.palette
-    val bgColor = if (selected) palette.primaryAccent else Color.Transparent
-    val fgColor = if (selected) palette.onPrimaryAccent else palette.textPrimary
-
-    Row(
-        modifier = Modifier
-            .clip(CircleShape)
-            .background(bgColor)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = fgColor,
-            modifier = Modifier.size(16.dp)
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = fgColor
-        )
-        if (showDropdownChevron) {
-            Icon(
-                imageVector = Icons.Default.KeyboardArrowDown,
-                contentDescription = null,
-                tint = fgColor,
-                modifier = Modifier.size(14.dp)
-            )
-        }
-    }
 }
 
 @Composable
@@ -1157,7 +1404,7 @@ private fun penIconFor(tool: DrawingToolType): ImageVector = when (tool) {
 }
 
 @Composable
-private fun penShortNameFor(tool: DrawingToolType): String = when (tool) {
+private fun penFullNameFor(tool: DrawingToolType): String = when (tool) {
     DrawingToolType.FINE_FOUNTAIN -> stringResource(R.string.editor_pen_fine_fountain)
     DrawingToolType.CALLIGRAPHY -> stringResource(R.string.editor_pen_calligraphy)
     DrawingToolType.PEN -> stringResource(R.string.editor_pen_ballpoint)
@@ -1166,9 +1413,6 @@ private fun penShortNameFor(tool: DrawingToolType): String = when (tool) {
     DrawingToolType.WATERCOLOR -> stringResource(R.string.editor_pen_watercolor)
     else -> stringResource(R.string.editor_tool_pen)
 }
-
-@Composable
-private fun penFullNameFor(tool: DrawingToolType): String = penShortNameFor(tool)
 
 internal fun formatFileSize(bytes: Long): String {
     if (bytes <= 0L) return "0 B"

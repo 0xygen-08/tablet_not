@@ -6,34 +6,22 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.RectF
-import android.util.LruCache
 import com.tabletnotes.app.domain.model.BoundingBox
 import com.tabletnotes.app.feature.editor.spatial.SpatialGridIndex
 import kotlin.math.floor
 
 /**
  * 10.000+ çizgi (stroke) olduğunda bile 60/120 FPS kare hızını korumak için
- * sabitlenmiş ("dry") çizgileri `512x512` piksellik Bitmap Karolarında (Tiles) önbelleğe alan sınıf.
- *
- * Çalışma Prensibi:
- * - Belge uzayı `tileDocSize` (512 birim) büyüklüğünde karolara bölünür.
- * - Yeni bir çizgi eklendiğinde veya silindiğinde tüm tuval değil, SADECE o çizginin
- *   sınırlayıcı kutusunun (`BoundingBox`) değdiği karolar "kirli" (`dirty`) olarak işaretlenir.
- * - Çizim sırasında yalnızca o anki ekrana (Viewport) giren karolar çizilir.
+ * sabitlenmiş ("dry") çizgileri `1024x1024` piksellik Bitmap Karolarında (Tiles) önbelleğe alan sınıf.
  */
 class BitmapTileCache(
     val tileDocSize: Float = 512f,
-    private val tilePixelSize: Int = 512,
-    maxCachedTiles: Int = 48
+    private val tilePixelSize: Int = 1024,
+    private val maxCachedTiles: Int = 48
 ) {
-    private val bitmapCache = object : LruCache<Long, Bitmap>(maxCachedTiles) {
-        override fun entryRemoved(
-            evicted: Boolean,
-            key: Long?,
-            oldValue: Bitmap?,
-            newValue: Bitmap?
-        ) {
-            // Yeniden kullanılabilir veya GC'ye bırakılır
+    private val bitmapCache = object : LinkedHashMap<Long, Bitmap>(maxCachedTiles, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, Bitmap>?): Boolean {
+            return size > maxCachedTiles
         }
     }
 
@@ -42,11 +30,11 @@ class BitmapTileCache(
     private val dstRect = RectF()
 
     val cachedTileCount: Int
-        @Synchronized get() = bitmapCache.size()
+        @Synchronized get() = bitmapCache.size
 
     @Synchronized
     fun clearAll() {
-        bitmapCache.evictAll()
+        bitmapCache.clear()
         dirtyTiles.clear()
     }
 

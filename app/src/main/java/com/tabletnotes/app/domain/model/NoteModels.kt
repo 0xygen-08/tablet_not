@@ -17,7 +17,9 @@ enum class DrawingToolType(val wireId: Int) {
     PENCIL(6),            // Kurşun Kalem (Dokulu grafit hissi)
     MARKER(7),            // Marker Kalem (Dolgun keçe uç)
     WATERCOLOR(8),        // Sulu Boya Fırçası (Yumuşak yarı saydam katmanlı)
-    LASSO_SELECT(9);      // Kare Seçim Modu (Taşıma, Kopyalama, Boyutlandırma, Silme)
+    LASSO_SELECT(9),      // Kare Seçim Modu (Taşıma, Kopyalama, Boyutlandırma, Silme)
+    LASER_POINTER(10),    // Lazer İşaretçi (Kalıcı değil, belirlenen süre sonra kaybolur)
+    SHAPE_TOOL(11);       // Şekil Algılama ve Düzeltme (Kare, Üçgen, Yamuk, Düz Çizgi, Çember)
 
     val isPenVariant: Boolean
         get() = this == PEN ||
@@ -41,6 +43,40 @@ enum class DrawingToolType(val wireId: Int) {
             entries.firstOrNull { it.wireId == id } ?: PEN
     }
 }
+
+/**
+ * Silgi çalışma modu: Çizgi Silgisi veya Alan Silgisi.
+ */
+enum class EraserMode {
+    STROKE_ERASER, // Çekilen bir çizgiyi tek dokunuşta tamamen siler
+    AREA_ERASER    // Sadece silgi dairesinin değdiği kısmı hassas olarak siler
+}
+
+/**
+ * Şekil algılama motorunun tanıdığı geometrik şekil tipleri.
+ */
+enum class RecognizedShapeType {
+    LINE,
+    CIRCLE,
+    TRIANGLE,
+    RECTANGLE,
+    SQUARE,
+    TRAPEZOID
+}
+
+/**
+ * Şekil çizim modunda algılanan ve kullanıcının boyutunu/yerini ayarlayıp onaylayacağı geçici şekil.
+ */
+@Immutable
+data class PendingRecognizedShape(
+    val shapeType: RecognizedShapeType,
+    val labelTr: String,
+    val pageIndex: Int,
+    val colorArgb: Int,
+    val thickness: Float,
+    val points: List<StrokePoint>,
+    val bounds: BoundingBox = BoundingBox.fromPoints(points, padding = 10f)
+)
 
 /**
  * Uygulama temasından bağımsız (Independent) Kağıt Arka Plan Rengi.

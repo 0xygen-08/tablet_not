@@ -1084,6 +1084,8 @@ private fun NoteAttachmentPickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(24.dp),
+        containerColor = palette.surfaceElevated,
         title = { Text(stringResource(R.string.chat_picker_dialog_title)) },
         text = {
             Column(
@@ -1169,8 +1171,11 @@ private fun AddContactOrGroupDialog(
     var name by rememberSaveable { mutableStateOf("") }
     var handle by rememberSaveable { mutableStateOf("") }
 
+    val palette = TabletNotesTheme.palette
     AlertDialog(
         onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(24.dp),
+        containerColor = palette.surfaceElevated,
         title = {
             Text(
                 stringResource(

@@ -1,11 +1,9 @@
 package com.tabletnotes.app.ui.navigation
 
-import android.graphics.BitmapFactory
 import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -14,7 +12,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -34,13 +31,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Palette
@@ -55,6 +52,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -71,8 +69,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -89,10 +85,8 @@ import com.tabletnotes.app.feature.chat.ui.ChatScreen
 import com.tabletnotes.app.feature.chat.ui.ChatViewModel
 import com.tabletnotes.app.feature.editor.ui.NoteEditorScreen
 import com.tabletnotes.app.feature.editor.ui.NotesWorkspaceViewModel
-import com.tabletnotes.app.feature.editor.ui.formatFileSize
 import com.tabletnotes.app.feature.nearby.ui.NearbyShareScreen
 import com.tabletnotes.app.feature.nearby.ui.NearbyShareViewModel
-import java.io.File
 
 enum class TopTabDestination(
     @StringRes val labelRes: Int
@@ -111,10 +105,12 @@ fun TabletNotesShell(
     chatViewModel: ChatViewModel = hiltViewModel(),
     nearbyViewModel: NearbyShareViewModel = hiltViewModel()
 ) {
+    val palette = TabletNotesTheme.palette
     var selectedTab by rememberSaveable { mutableStateOf(TopTabDestination.NOTES) }
     var showNearbyModal by rememberSaveable { mutableStateOf(false) }
     var showProfileDialog by rememberSaveable { mutableStateOf(false) }
     var showNewFolderDialog by rememberSaveable { mutableStateOf(false) }
+    var folderPendingDelete by rememberSaveable { mutableStateOf<String?>(null) }
     var showShareFromEditorDialog by rememberSaveable { mutableStateOf(false) }
     var showNotesSearchBar by rememberSaveable { mutableStateOf(false) }
     var notesSearchQuery by rememberSaveable { mutableStateOf("") }
@@ -139,9 +135,25 @@ fun TabletNotesShell(
     GraphGridBackground(modifier = Modifier.fillMaxSize()) {
         when {
             isEditorOpen -> {
+                val activeCourse = workspaceViewModel.editorController.courseName
+                val currentCourseNotes = remember(noteSummaries, activeCourse) {
+                    noteSummaries
+                        .filter { it.courseName.equals(activeCourse, ignoreCase = true) }
+                        .sortedByDescending { it.updatedAtMillis }
+                }
+
                 NoteEditorScreen(
                     controller = workspaceViewModel.editorController,
                     autosaveStatus = autosaveStatus,
+                    courseNotes = currentCourseNotes,
+                    onSwitchSubNote = { noteId -> workspaceViewModel.openExistingNote(noteId) },
+                    onCreateSubNote = {
+                        workspaceViewModel.createAndOpenNewNote(
+                            defaultTitlePrefix = defaultNoteTitlePrefix,
+                            targetCourse = activeCourse
+                        )
+                    },
+                    onDeleteSubNote = { noteId -> workspaceViewModel.deleteNote(noteId) },
                     onRequestJsonDebug = { workspaceViewModel.buildJsonDebugSnapshot() },
                     onCycleTheme = onCycleTheme,
                     onNavigateBack = { workspaceViewModel.closeEditorAndSaveImmediately() },
@@ -169,15 +181,15 @@ fun TabletNotesShell(
                         Surface(
                             onClick = { showNearbyModal = false },
                             shape = CircleShape,
-                            color = TabletNotesTheme.palette.surfaceElevated,
-                            border = BorderStroke(1.dp, TabletNotesTheme.palette.borderSubtle),
+                            color = palette.surfaceElevated,
+                            border = BorderStroke(1.dp, palette.borderSubtle),
                             modifier = Modifier.size(38.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.Default.ChevronLeft,
                                     contentDescription = stringResource(R.string.action_back),
-                                    tint = TabletNotesTheme.palette.textPrimary,
+                                    tint = palette.textPrimary,
                                     modifier = Modifier.size(22.dp)
                                 )
                             }
@@ -185,7 +197,7 @@ fun TabletNotesShell(
                         Text(
                             text = stringResource(R.string.nearby_section_title),
                             style = MaterialTheme.typography.titleLarge,
-                            color = TabletNotesTheme.palette.textPrimary
+                            color = palette.textPrimary
                         )
                     }
 
@@ -208,13 +220,11 @@ fun TabletNotesShell(
                         .padding(horizontal = 20.dp, vertical = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // ÜST NAVİGASYON ÇUBUĞU (Taslak 1 ve 2: Sol Profil | Orta Notlar-Arkadaşlar-Gruplar Pill | Sağ Arama & ≡ Menü)
                     TabletTopNavigationBar(
                         selectedTab = selectedTab,
                         onSelectTab = { selectedTab = it },
                         currentTheme = currentTheme,
                         onSelectTheme = onSelectTheme,
-                        onCycleTheme = onCycleTheme,
                         onProfileClick = { showProfileDialog = true },
                         onToggleSearch = {
                             showNotesSearchBar = !showNotesSearchBar
@@ -226,20 +236,26 @@ fun TabletNotesShell(
 
                     Box(modifier = Modifier.weight(1f)) {
                         when (selectedTab) {
-                            TopTabDestination.NOTES -> NotesAndCoursesWorkspace(
+                            TopTabDestination.NOTES -> NotesFoldersOnlyWorkspace(
                                 notes = noteSummaries,
                                 courses = customCourses,
                                 selectedCourse = selectedCourse,
                                 showSearchBar = showNotesSearchBar,
                                 searchQuery = notesSearchQuery,
                                 onSearchQueryChange = { notesSearchQuery = it },
-                                onSelectCourse = { workspaceViewModel.selectCourseFolder(it) },
-                                onOpenNote = { noteId -> workspaceViewModel.openExistingNote(noteId) },
-                                onDeleteNote = { noteId -> workspaceViewModel.deleteNote(noteId) },
+                                onOpenFolder = { courseName ->
+                                    workspaceViewModel.openCourseFolder(
+                                        courseName = courseName,
+                                        defaultTitlePrefix = defaultNoteTitlePrefix
+                                    )
+                                },
+                                onDeleteFolderRequest = { courseName ->
+                                    folderPendingDelete = courseName
+                                },
                                 onCreateNewNote = {
                                     workspaceViewModel.createAndOpenNewNote(
                                         defaultTitlePrefix = defaultNoteTitlePrefix,
-                                        targetCourse = selectedCourse ?: "Fizik"
+                                        targetCourse = selectedCourse ?: customCourses.firstOrNull() ?: "Fizik"
                                     )
                                 }
                             )
@@ -262,45 +278,121 @@ fun TabletNotesShell(
         }
     }
 
-    // --- DİYALOGLAR ---
+    // --- DİYALOGLAR (Tamamı 24dp yuvarlatılmış dikdörtgen formunda!) ---
 
-    // 1. Profil & E2EE Kimlik Diyaloğu
+    // 1. Profil ve Google Hesabı Diyaloğu
     if (showProfileDialog) {
-        var nameInput by rememberSaveable { mutableStateOf(currentUser.displayName) }
-        var emailInput by rememberSaveable { mutableStateOf(currentUser.emailOrPhone) }
+        var nameInput by rememberSaveable(currentUser.displayName) { mutableStateOf(currentUser.displayName) }
 
         AlertDialog(
             onDismissRequest = { showProfileDialog = false },
-            title = { Text(stringResource(R.string.chat_auth_dialog_title)) },
+            shape = RoundedCornerShape(24.dp),
+            containerColor = palette.surfaceElevated,
+            title = {
+                Text(
+                    text = stringResource(R.string.chat_auth_dialog_title),
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = palette.textPrimary
+                )
+            },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(
+                    modifier = Modifier.widthIn(min = 380.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
                     OutlinedTextField(
                         value = nameInput,
                         onValueChange = { nameInput = it },
-                        label = { Text(stringResource(R.string.chat_auth_name_label)) },
+                        label = { Text(stringResource(R.string.profile_username_label)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    OutlinedTextField(
-                        value = emailInput,
-                        onValueChange = { emailInput = it },
-                        label = { Text(stringResource(R.string.chat_auth_email_phone_label)) },
-                        singleLine = true,
+
+                    HorizontalDivider(color = palette.borderSubtle)
+
+                    // Görsel Google Hesabı ile Giriş Yap Alanı
+                    Surface(
+                        color = if (currentUser.isGoogleConnected) {
+                            palette.statusReadyEmerald.copy(alpha = 0.14f)
+                        } else {
+                            palette.surface
+                        },
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(
+                            1.dp,
+                            if (currentUser.isGoogleConnected) palette.statusReadyEmerald else palette.border
+                        ),
                         modifier = Modifier.fillMaxWidth()
-                    )
-                    Text(
-                        text = "E2EE Anahtar Parmak İzi: ${currentUser.keyFingerprint}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = TabletNotesTheme.palette.textMuted
-                    )
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AccountCircle,
+                                    contentDescription = null,
+                                    tint = if (currentUser.isGoogleConnected) palette.statusReadyEmerald else palette.primaryAccent,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = if (currentUser.isGoogleConnected) {
+                                            stringResource(
+                                                R.string.profile_google_connected_fmt,
+                                                currentUser.googleEmail ?: "ogrenci@gmail.com"
+                                            )
+                                        } else {
+                                            stringResource(R.string.profile_google_signin_btn)
+                                        },
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                        color = palette.textPrimary
+                                    )
+                                    Text(
+                                        text = "E2EE Anahtar: ${currentUser.keyFingerprint}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = palette.textMuted
+                                    )
+                                }
+                            }
+
+                            if (!currentUser.isGoogleConnected) {
+                                Button(
+                                    onClick = { chatViewModel.toggleGoogleSignInVisual(connect = true) },
+                                    shape = CircleShape,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.AccountCircle,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(stringResource(R.string.profile_google_signin_btn))
+                                }
+                            } else {
+                                OutlinedButton(
+                                    onClick = { chatViewModel.toggleGoogleSignInVisual(connect = false) },
+                                    shape = CircleShape,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(stringResource(R.string.profile_google_disconnect))
+                                }
+                            }
+                        }
+                    }
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        chatViewModel.signInOrUpdateProfile(nameInput, emailInput)
+                        chatViewModel.signInOrUpdateProfile(nameInput, currentUser.emailOrPhone)
                         showProfileDialog = false
-                    }
+                    },
+                    shape = CircleShape
                 ) {
                     Text(stringResource(R.string.chat_auth_save_login))
                 }
@@ -318,6 +410,8 @@ fun TabletNotesShell(
         var folderName by rememberSaveable { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showNewFolderDialog = false },
+            shape = RoundedCornerShape(24.dp),
+            containerColor = palette.surfaceElevated,
             title = { Text(stringResource(R.string.notes_new_folder_dialog_title)) },
             text = {
                 OutlinedTextField(
@@ -333,7 +427,8 @@ fun TabletNotesShell(
                     onClick = {
                         workspaceViewModel.addCourseFolder(folderName)
                         showNewFolderDialog = false
-                    }
+                    },
+                    shape = CircleShape
                 ) {
                     Text(stringResource(R.string.editor_text_dialog_save))
                 }
@@ -346,21 +441,62 @@ fun TabletNotesShell(
         )
     }
 
-    // 3. Editör İçinden Doğrudan Not Paylaşma Diyaloğu (Arkadaşa, Gruba veya Yakındaki Tablete)
+    // 3. Ders Klasörü Silme Onay Diyaloğu
+    val targetDeleteFolder = folderPendingDelete
+    if (targetDeleteFolder != null) {
+        AlertDialog(
+            onDismissRequest = { folderPendingDelete = null },
+            shape = RoundedCornerShape(24.dp),
+            containerColor = palette.surfaceElevated,
+            title = { Text(stringResource(R.string.folder_delete_title)) },
+            text = {
+                Text(
+                    text = stringResource(R.string.folder_delete_confirm_msg, targetDeleteFolder),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = palette.textSecondary
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        workspaceViewModel.deleteCourseFolder(targetDeleteFolder)
+                        folderPendingDelete = null
+                    },
+                    shape = CircleShape
+                ) {
+                    Text(stringResource(R.string.editor_text_dialog_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { folderPendingDelete = null }) {
+                    Text(stringResource(R.string.editor_text_dialog_cancel))
+                }
+            }
+        )
+    }
+
+    // 4. Not Paylaşma Diyaloğu (24dp Dikdörtgen — Yazıların Tümü Eksiksiz Görünür)
     if (showShareFromEditorDialog) {
         val activeNoteId = workspaceViewModel.editorController.noteId
         val activeSummary = noteSummaries.firstOrNull { it.id == activeNoteId }
-        val palette = TabletNotesTheme.palette
 
         AlertDialog(
             onDismissRequest = { showShareFromEditorDialog = false },
-            title = { Text(stringResource(R.string.action_share_note)) },
+            shape = RoundedCornerShape(24.dp),
+            containerColor = palette.surfaceElevated,
+            title = {
+                Text(
+                    text = stringResource(R.string.action_share_note),
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = palette.textPrimary
+                )
+            },
             text = {
                 Column(
                     modifier = Modifier
-                        .widthIn(min = 360.dp)
-                        .heightIn(max = 360.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                        .widthIn(min = 420.dp)
+                        .heightIn(max = 380.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Surface(
                         onClick = {
@@ -374,7 +510,7 @@ fun TabletNotesShell(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
-                            modifier = Modifier.padding(12.dp),
+                            modifier = Modifier.padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
@@ -391,10 +527,10 @@ fun TabletNotesShell(
                         }
                     }
 
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
 
                     LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         items(allContacts, key = { it.id }) { contact ->
                             Surface(
@@ -413,7 +549,7 @@ fun TabletNotesShell(
                                         TopTabDestination.FRIENDS_CHAT
                                     }
                                 },
-                                shape = RoundedCornerShape(12.dp),
+                                shape = RoundedCornerShape(14.dp),
                                 color = palette.surface,
                                 border = BorderStroke(1.dp, palette.borderSubtle),
                                 modifier = Modifier.fillMaxWidth()
@@ -421,14 +557,17 @@ fun TabletNotesShell(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(10.dp),
+                                        .padding(horizontal = 14.dp, vertical = 12.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Text(
                                         text = contact.displayName,
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = palette.textPrimary
+                                        color = palette.textPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
                                     )
                                     Icon(
                                         imageVector = Icons.AutoMirrored.Filled.Send,
@@ -457,7 +596,6 @@ private fun TabletTopNavigationBar(
     onSelectTab: (TopTabDestination) -> Unit,
     currentTheme: ThemePreset,
     onSelectTheme: (ThemePreset) -> Unit,
-    onCycleTheme: () -> Unit,
     onProfileClick: () -> Unit,
     onToggleSearch: () -> Unit,
     onOpenNearbyShare: () -> Unit,
@@ -473,7 +611,6 @@ private fun TabletTopNavigationBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        // SOL: Yuvarlak Profil Butonu (Taslak 1 ve 2 ile Birebir — 38dp)
         Surface(
             onClick = onProfileClick,
             shape = CircleShape,
@@ -491,7 +628,6 @@ private fun TabletTopNavigationBar(
             }
         }
 
-        // ORTA: Tam Yuvarlak (Pill) Sekme Çubuğu ("Notlar | Arkadaşlar | Gruplar" — Kompakt Tablet Boyutu)
         Surface(
             color = palette.surfaceElevated,
             shape = CircleShape,
@@ -528,7 +664,6 @@ private fun TabletTopNavigationBar(
             }
         }
 
-        // SAĞ: Arama (Büyüteç) ve Üç Çizgi (≡) Menü Butonu
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -575,7 +710,6 @@ private fun TabletTopNavigationBar(
                     onDismissRequest = { showMenu = false },
                     modifier = Modifier.width(260.dp)
                 ) {
-                    // Tema Seçenekleri (Gece, Kağıt, Pastel, Sistem)
                     listOf(
                         ThemePreset.NIGHT_DARK,
                         ThemePreset.PAPER_LIGHT,
@@ -631,45 +765,41 @@ private fun TabletTopNavigationBar(
     }
 }
 
+/**
+ * İlk Ekrandaki "Notlar" Sekmesi:
+ * Yalnızca ders klasörü kartlarını (Fizik, Kimya, Mat., Tarih, İng. vb.) gösterir;
+ * alttaki alt notlar listesi kaldırılmıştır. Bir klasöre tıklandığında kullanıcı doğrudan o klasörün
+ * en son düzenlediği alt notuna açılır.
+ */
 @Composable
-private fun NotesAndCoursesWorkspace(
+private fun NotesFoldersOnlyWorkspace(
     notes: List<NoteSummary>,
     courses: List<String>,
     selectedCourse: String?,
     showSearchBar: Boolean,
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
-    onSelectCourse: (String?) -> Unit,
-    onOpenNote: (String) -> Unit,
-    onDeleteNote: (String) -> Unit,
+    onOpenFolder: (String) -> Unit,
+    onDeleteFolderRequest: (String) -> Unit,
     onCreateNewNote: () -> Unit
 ) {
     val palette = TabletNotesTheme.palette
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.screenWidthDp > configuration.screenHeightDp
 
-    // Ders klasörlerini ve her dersteki not sayılarını birleştir
     val allCourseNames = remember(courses, notes) {
         val merged = LinkedHashSet<String>()
         merged.addAll(courses)
         notes.forEach { if (it.courseName.isNotBlank()) merged.add(it.courseName) }
-        merged.toList()
-    }
-
-    val filteredNotes = remember(notes, selectedCourse, searchQuery) {
-        notes.filter { note ->
-            val matchesCourse = selectedCourse == null || note.courseName.equals(selectedCourse, ignoreCase = true)
-            val matchesQuery = searchQuery.isBlank() ||
-                note.title.contains(searchQuery.trim(), ignoreCase = true) ||
-                note.courseName.contains(searchQuery.trim(), ignoreCase = true)
-            matchesCourse && matchesQuery
+        if (searchQuery.isBlank()) {
+            merged.toList()
+        } else {
+            val q = searchQuery.trim().lowercase()
+            merged.filter { course ->
+                course.lowercase().contains(q) ||
+                    notes.any { it.courseName.equals(course, ignoreCase = true) && it.title.lowercase().contains(q) }
+            }
         }
-    }
-
-    var portraitShowingCourseDetail by rememberSaveable { mutableStateOf(false) }
-
-    BackHandler(enabled = !isLandscape && portraitShowingCourseDetail) {
-        portraitShowingCourseDetail = false
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -677,7 +807,6 @@ private fun NotesAndCoursesWorkspace(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // İsteğe Bağlı Kompakt Arama Çubuğu
             AnimatedVisibility(visible = showSearchBar) {
                 Surface(
                     shape = CircleShape,
@@ -728,107 +857,28 @@ private fun NotesAndCoursesWorkspace(
                 }
             }
 
-            if (isLandscape) {
-                // YATAY (LANDSCAPE) TABLET MODU: Sol Ders Klasörleri Grid + Sağ Seçili Dersin Notları
-                Row(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalArrangement = Arrangement.spacedBy(18.dp)
-                ) {
-                    // Sol Panel: 24dp Yuvarlatılmış Ders Klasörü Kartları (Fizik, Kimya, Mat., Tarih, İng.)
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(3),
-                        modifier = Modifier
-                            .weight(1.1f)
-                            .fillMaxHeight(),
-                        contentPadding = PaddingValues(bottom = 76.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        itemsIndexed(allCourseNames, key = { _, name -> name }) { index, courseName ->
-                            val count = notes.count { it.courseName.equals(courseName, ignoreCase = true) }
-                            val isSelected = selectedCourse.equals(courseName, ignoreCase = true)
-                            CourseFolderCard(
-                                courseName = courseName,
-                                noteCount = count,
-                                index = index,
-                                isSelected = isSelected,
-                                onClick = {
-                                    onSelectCourse(courseName)
-                                }
-                            )
-                        }
-                    }
-
-                    // Sağ Panel: Seçili Ders Klasörünün İçindeki Notlar
-                    Surface(
-                        color = palette.surfaceElevated,
-                        shape = RoundedCornerShape(palette.cardCornerRadius),
-                        border = BorderStroke(1.dp, palette.borderSubtle),
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                    ) {
-                        CourseNotesDetailList(
-                            courseName = selectedCourse ?: stringResource(R.string.notes_all_courses),
-                            notes = filteredNotes,
-                            showBackButton = false,
-                            onBackToFolders = {},
-                            onOpenNote = onOpenNote,
-                            onDeleteNote = onDeleteNote
-                        )
-                    }
-                }
-            } else {
-                // DİKEY (PORTRAIT) TABLET MODU: Üstte 3 Sütunlu Geniş Ders Klasörleri Grid + Altta Seçili Dersin Notları
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(3),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(276.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        itemsIndexed(allCourseNames, key = { _, name -> name }) { index, courseName ->
-                            val count = notes.count { it.courseName.equals(courseName, ignoreCase = true) }
-                            val isSelected = selectedCourse.equals(courseName, ignoreCase = true)
-                            CourseFolderCard(
-                                courseName = courseName,
-                                noteCount = count,
-                                index = index,
-                                isSelected = isSelected,
-                                onClick = {
-                                    onSelectCourse(courseName)
-                                }
-                            )
-                        }
-                    }
-
-                    Surface(
-                        color = palette.surfaceElevated,
-                        shape = RoundedCornerShape(palette.cardCornerRadius),
-                        border = BorderStroke(1.dp, palette.borderSubtle),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                    ) {
-                        CourseNotesDetailList(
-                            courseName = selectedCourse ?: stringResource(R.string.notes_all_courses),
-                            notes = filteredNotes,
-                            showBackButton = false,
-                            onBackToFolders = {},
-                            onOpenNote = onOpenNote,
-                            onDeleteNote = onDeleteNote
-                        )
-                    }
+            LazyVerticalGrid(
+                columns = if (isLandscape) GridCells.Fixed(4) else GridCells.Fixed(2),
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(top = 6.dp, bottom = 84.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                itemsIndexed(allCourseNames, key = { _, name -> name }) { index, courseName ->
+                    val count = notes.count { it.courseName.equals(courseName, ignoreCase = true) }
+                    val isSelected = selectedCourse.equals(courseName, ignoreCase = true)
+                    CourseFolderCard(
+                        courseName = courseName,
+                        noteCount = count,
+                        index = index,
+                        isSelected = isSelected,
+                        onClick = { onOpenFolder(courseName) },
+                        onDeleteClick = { onDeleteFolderRequest(courseName) }
+                    )
                 }
             }
         }
 
-        // SAĞ ALT KÖŞE + SQUIRCLE BUTONU (Taslak 1 ile Birebir Uyumlu — 54dp)
         Surface(
             onClick = onCreateNewNote,
             shape = RoundedCornerShape(palette.fabCornerRadius),
@@ -851,24 +901,20 @@ private fun NotesAndCoursesWorkspace(
     }
 }
 
-/**
- * Taslak 1, 2 ve 3'teki 24dp yuvarlatılmış Ders Klasörü Kartı (Fizik, Kimya, Mat., Tarih, İng.).
- * Sol üstte renkli ders noktası, altta ders adı ve not sayısı yer alır.
- */
 @Composable
 private fun CourseFolderCard(
     courseName: String,
     noteCount: Int,
     index: Int,
     isSelected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onDeleteClick: () -> Unit
 ) {
     val palette = TabletNotesTheme.palette
     val courseStyle = CourseFolderPalette.styleForCourse(courseName, index)
 
     val cardBg = when {
         palette.usePastelFolderCards -> courseStyle.pastelSurfaceLight
-        palette.isDark -> palette.surfaceElevated
         else -> palette.surfaceElevated
     }
     val dotColor = if (palette.isDark) courseStyle.dotDark else courseStyle.dotLight
@@ -878,11 +924,6 @@ private fun CourseFolderCard(
         else -> BorderStroke(1.dp, palette.borderSubtle)
     }
 
-    val displayCount = remember(courseName, noteCount) {
-        // Kullanıcının gerçek not sayısını göster
-        noteCount
-    }
-
     Surface(
         onClick = onClick,
         color = cardBg,
@@ -890,217 +931,52 @@ private fun CourseFolderCard(
         border = borderStroke,
         modifier = Modifier
             .fillMaxWidth()
-            .height(132.dp)
+            .height(152.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp),
+                .padding(18.dp),
             verticalArrangement = Arrangement.SpaceBetween,
             horizontalAlignment = Alignment.Start
         ) {
-            // Sol Üst Renkli Ders Noktası
-            Box(
-                modifier = Modifier
-                    .size(11.dp)
-                    .clip(CircleShape)
-                    .background(dotColor)
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(dotColor)
+                )
 
-            // Alt: Ders Adı ve "X not" Bilgisi
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                IconButton(
+                    onClick = onDeleteClick,
+                    modifier = Modifier.size(30.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DeleteOutline,
+                        contentDescription = stringResource(R.string.folder_delete_title),
+                        tint = palette.textMuted.copy(alpha = 0.78f),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(
                     text = courseName,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                     color = palette.textPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = stringResource(R.string.notes_folder_count_format, displayCount),
+                    text = stringResource(R.string.notes_folder_count_format, noteCount),
                     style = MaterialTheme.typography.labelMedium,
                     color = palette.textSecondary
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun CourseNotesDetailList(
-    courseName: String,
-    notes: List<NoteSummary>,
-    showBackButton: Boolean,
-    onBackToFolders: () -> Unit,
-    onOpenNote: (String) -> Unit,
-    onDeleteNote: (String) -> Unit
-) {
-    val palette = TabletNotesTheme.palette
-    val courseStyle = CourseFolderPalette.styleForCourse(courseName)
-    val dotColor = if (palette.isDark) courseStyle.dotDark else courseStyle.dotLight
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            if (showBackButton) {
-                Surface(
-                    onClick = onBackToFolders,
-                    shape = CircleShape,
-                    color = palette.surfaceInteractive,
-                    modifier = Modifier.size(34.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Default.ChevronLeft,
-                            contentDescription = stringResource(R.string.action_back),
-                            tint = palette.textPrimary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-            }
-
-            Box(
-                modifier = Modifier
-                    .size(10.dp)
-                    .clip(CircleShape)
-                    .background(dotColor)
-            )
-
-            Text(
-                text = courseName,
-                style = MaterialTheme.typography.titleLarge,
-                color = palette.textPrimary
-            )
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            Text(
-                text = stringResource(R.string.notes_folder_count_format, notes.size),
-                style = MaterialTheme.typography.labelMedium,
-                color = palette.textMuted
-            )
-        }
-
-        HorizontalDivider(color = palette.borderSubtle)
-
-        if (notes.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = stringResource(R.string.notes_empty_state),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = palette.textMuted
-                )
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 72.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                items(notes, key = { it.id }) { note ->
-                    NoteListItemRow(
-                        note = note,
-                        onOpen = { onOpenNote(note.id) },
-                        onDelete = { onDeleteNote(note.id) }
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun NoteListItemRow(
-    note: NoteSummary,
-    onOpen: () -> Unit,
-    onDelete: () -> Unit
-) {
-    val palette = TabletNotesTheme.palette
-    val thumbBitmap = remember(note.thumbnailPath, note.updatedAtMillis) {
-        note.thumbnailPath?.let { path ->
-            val file = File(path)
-            if (file.exists()) BitmapFactory.decodeFile(file.absolutePath) else null
-        }
-    }
-
-    Surface(
-        onClick = onOpen,
-        color = palette.surface,
-        shape = RoundedCornerShape(18.dp),
-        border = BorderStroke(1.dp, palette.borderSubtle),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Surface(
-                color = Color(0xFFFAF7EE),
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.dp, palette.borderSubtle),
-                modifier = Modifier.size(width = 58.dp, height = 74.dp)
-            ) {
-                if (thumbBitmap != null) {
-                    Image(
-                        bitmap = thumbBitmap.asImageBitmap(),
-                        contentDescription = note.title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Default.Description,
-                            contentDescription = null,
-                            tint = palette.primaryAccent,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                }
-            }
-
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    text = "${note.courseName} › ${note.title}",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = palette.textPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = "${note.pageCount} sayfa • ${note.courseName}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = palette.textMuted
-                )
-            }
-
-            IconButton(
-                onClick = onDelete,
-                modifier = Modifier.size(34.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.DeleteOutline,
-                    contentDescription = stringResource(R.string.notes_delete_note),
-                    tint = palette.textMuted,
-                    modifier = Modifier.size(18.dp)
                 )
             }
         }

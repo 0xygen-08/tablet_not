@@ -137,6 +137,12 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    fun toggleGoogleSignInVisual(connect: Boolean, email: String? = null) {
+        viewModelScope.launch(ioDispatcher) {
+            authService.toggleGoogleSignInVisual(connect, email)
+        }
+    }
+
     fun addOrFindContact(displayName: String, handleOrEmail: String, isGroup: Boolean = false) {
         val cleanName = displayName.trim().ifBlank { return }
         val cleanHandle = handleOrEmail.trim().ifBlank { if (isGroup) "grup@tablet.edu.tr" else "kullanici@tablet.edu.tr" }

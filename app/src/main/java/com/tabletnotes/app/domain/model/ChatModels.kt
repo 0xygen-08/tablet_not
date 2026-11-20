@@ -23,7 +23,9 @@ data class UserProfile(
     val displayName: String,
     val emailOrPhone: String,
     val publicKeyBase64: String,
-    val keyFingerprint: String
+    val keyFingerprint: String,
+    val isGoogleConnected: Boolean = false,
+    val googleEmail: String? = null
 )
 
 data class ChatContact(

@@ -6,13 +6,13 @@ import android.view.MotionEvent
  * Bir dokunma/kalem olayının (MotionEvent) editörde nasıl işleneceğini belirten karar sonucu.
  */
 enum class InputRouteDecision {
-    /** Çizim veya çizgi silgisi olarak işle (Kalem veya izin verilen tek parmak/fare). */
+    /** Çizim veya silme işlemi olarak işle (Kalem veya masaüstü emülatör faresi). */
     DRAW_OR_ERASE,
 
     /** Donanım kalem silgisi (kalemin arka ucu veya gövde tuşu) ile doğrudan silgi olarak işle. */
     HARDWARE_STYLUS_ERASER,
 
-    /** Tuvali kaydırma / yakınlaştırma (Pan / Zoom) hareketi olarak işle. */
+    /** Tuvali kaydırma / yakınlaştırma (Pan / Zoom) hareketi olarak işle (Parmağın her zaman yaptığı işlem). */
     PAN_ZOOM,
 
     /** Avuç içi (Palm) temasını yok say ve devam eden hatalı parmak çizimini iptal et. */
@@ -20,8 +20,11 @@ enum class InputRouteDecision {
 }
 
 /**
- * Tablet ekranlarında yazı yazarken avuç içinin (palm) ekrana değmesiyle oluşan
- * istenmeyen çizgileri ve kaymaları engelleyen filtre.
+ * Tablet kullanım ergonomisi:
+ * - Parmakla (1 veya 2 parmak) kesinlikle mürekkep çizimi yapılmaz; tek parmak her zaman ekranda gezinmeyi (Pan),
+ *   çift parmak ise yakınlaştırma/uzaklaştırma ve gezinmeyi (Pinch Zoom + Pan) yönetir.
+ * - Yazma ve çizim işlemleri yalnızca Stylus / S-Pen kalemle (ve emülatörde test için Mouse ile) yapılır.
+ * - Kalem ekrana yaklaştığında avuç içi / el teması otomatik olarak reddedilir.
  */
 class PalmRejectionFilter(
     private val stylusGuardWindowMillis: Long = 260L,
@@ -39,7 +42,7 @@ class PalmRejectionFilter(
 
     fun evaluate(
         event: MotionEvent,
-        stylusOnlyMode: Boolean
+        @Suppress("UNUSED_PARAMETER") stylusOnlyMode: Boolean = true
     ): InputRouteDecision {
         if ((event.flags and MotionEvent.FLAG_CANCELED) != 0 ||
             event.actionMasked == MotionEvent.ACTION_CANCEL
@@ -89,20 +92,15 @@ class PalmRejectionFilter(
                 // Geniş temas alanı (avuç içi / bilek teması) reddedilir.
                 return InputRouteDecision.REJECTED_PALM
             }
+            // Parmakla (tek veya çoklu parmak) tablette asla yazı yazılmaz; her zaman gezinme / yakınlaştırma yapar.
+            return InputRouteDecision.PAN_ZOOM
         }
 
-        // Çoklu parmak (2+ parmak) her zaman Zoom / Pan yapar
         if (event.pointerCount >= 2) {
             return InputRouteDecision.PAN_ZOOM
         }
 
-        // "Sadece Kalem" (Stylus Only) modu açıksa tek parmak çizim yapmaz, sayfayı kaydırır (Pan).
-        // Emülatörde fare (TOOL_TYPE_MOUSE) ile test kolaylığı için fare her zaman çizim yapabilir.
-        if (stylusOnlyMode && primaryToolType == MotionEvent.TOOL_TYPE_FINGER) {
-            return InputRouteDecision.PAN_ZOOM
-        }
-
+        // Emülatörde fare (TOOL_TYPE_MOUSE) çizim testi için serbest kalır.
         return InputRouteDecision.DRAW_OR_ERASE
     }
 }
-

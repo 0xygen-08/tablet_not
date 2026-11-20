@@ -19,6 +19,7 @@ interface AuthService {
     val currentUser: StateFlow<UserProfile>
     fun getLocalIdentityKeyBundle(): IdentityKeyBundle
     suspend fun signInOrUpdateProfile(displayName: String, emailOrPhone: String): UserProfile
+    suspend fun toggleGoogleSignInVisual(connect: Boolean, email: String? = null): UserProfile
 }
 
 @Singleton
@@ -51,7 +52,34 @@ class HybridAuthService @Inject constructor(
             .putString(KEY_EMAIL_PHONE, updated.emailOrPhone)
             .apply()
 
-        // Firebase yapılandırılmışsa kullanıcı profilini ve E2EE Açık Anahtarını Firestore'a yayınla
+        syncProfileToFirestoreIfConfigured(updated)
+        _currentUser.value = updated
+        return updated
+    }
+
+    override suspend fun toggleGoogleSignInVisual(connect: Boolean, email: String?): UserProfile {
+        val current = _currentUser.value
+        val resolvedEmail = if (connect) {
+            email?.trim()?.takeIf { it.isNotBlank() } ?: current.googleEmail ?: "ogrenci@gmail.com"
+        } else {
+            null
+        }
+        val updated = current.copy(
+            isGoogleConnected = connect,
+            googleEmail = resolvedEmail,
+            emailOrPhone = if (connect && resolvedEmail != null) resolvedEmail else current.emailOrPhone
+        )
+        prefs.edit()
+            .putBoolean(KEY_GOOGLE_CONNECTED, updated.isGoogleConnected)
+            .putString(KEY_GOOGLE_EMAIL, updated.googleEmail)
+            .putString(KEY_EMAIL_PHONE, updated.emailOrPhone)
+            .apply()
+
+        _currentUser.value = updated
+        return updated
+    }
+
+    private fun syncProfileToFirestoreIfConfigured(updated: UserProfile) {
         runCatching {
             FirebaseApp.getInstance()
             val firebaseUid = FirebaseAuth.getInstance().currentUser?.uid ?: updated.uid
@@ -68,9 +96,6 @@ class HybridAuthService @Inject constructor(
                     )
                 )
         }
-
-        _currentUser.value = updated
-        return updated
     }
 
     private fun loadOrCreateKeyBundle(): IdentityKeyBundle {
@@ -99,13 +124,17 @@ class HybridAuthService @Inject constructor(
         }
         val name = prefs.getString(KEY_DISPLAY_NAME, "Sen (Pixel Tablet)") ?: "Sen (Pixel Tablet)"
         val emailPhone = prefs.getString(KEY_EMAIL_PHONE, "ogrenci@tablet.edu.tr") ?: "ogrenci@tablet.edu.tr"
+        val isGoogle = prefs.getBoolean(KEY_GOOGLE_CONNECTED, false)
+        val googleMail = prefs.getString(KEY_GOOGLE_EMAIL, null)
 
         return UserProfile(
             uid = uid,
             displayName = name,
             emailOrPhone = emailPhone,
             publicKeyBase64 = keyBundle.publicKeyBase64,
-            keyFingerprint = keyBundle.fingerprintHex
+            keyFingerprint = keyBundle.fingerprintHex,
+            isGoogleConnected = isGoogle,
+            googleEmail = googleMail
         )
     }
 
@@ -113,6 +142,8 @@ class HybridAuthService @Inject constructor(
         private const val KEY_UID = "auth_uid"
         private const val KEY_DISPLAY_NAME = "auth_display_name"
         private const val KEY_EMAIL_PHONE = "auth_email_phone"
+        private const val KEY_GOOGLE_CONNECTED = "auth_google_connected"
+        private const val KEY_GOOGLE_EMAIL = "auth_google_email"
         private const val KEY_PUBLIC_B64 = "e2ee_public_key_b64"
         private const val KEY_PRIVATE_B64 = "e2ee_private_key_b64"
         private const val KEY_FINGERPRINT = "e2ee_key_fingerprint"

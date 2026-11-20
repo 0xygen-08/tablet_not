@@ -23,6 +23,7 @@ import com.tabletnotes.app.domain.repository.NoteSummary
 import com.tabletnotes.app.feature.format.binary.NoteBinaryCodec
 import com.tabletnotes.app.feature.format.thumbnail.NoteThumbnailGenerator
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
@@ -53,29 +54,36 @@ class OfflineFirstNoteRepository @Inject constructor(
         }
 
     override suspend fun saveNoteDocumentAtomically(document: NoteDocument): NoteSummary =
-        withContext(ioDispatcher) {
+        withContext(ioDispatcher + NonCancellable) {
             val binaryBytes = NoteBinaryCodec.encode(document, compress = true)
             val noteFile = fileStore.writeNoteBytesAtomically(document.id, binaryBytes)
+
+            val initialEntity = NoteEntity(
+                id = document.id,
+                title = document.title,
+                pageCount = document.pages.size.coerceAtLeast(1),
+                strokeCount = document.strokes.size,
+                filePath = noteFile.absolutePath,
+                thumbnailPath = null,
+                fileSizeBytes = binaryBytes.size.toLong(),
+                createdAtMillis = document.createdAtMillis,
+                updatedAtMillis = document.updatedAtMillis,
+                courseName = document.courseName
+            )
+            noteDao.upsertNote(initialEntity)
 
             val thumbFile = runCatching {
                 val pngBytes = NoteThumbnailGenerator.renderThumbnailPngBytes(document)
                 fileStore.writeThumbnailBytesAtomically(document.id, pngBytes)
             }.getOrNull()
 
-            val entity = NoteEntity(
-                id = document.id,
-                title = document.title,
-                pageCount = document.pages.size.coerceAtLeast(1),
-                strokeCount = document.strokes.size,
-                filePath = noteFile.absolutePath,
-                thumbnailPath = thumbFile?.absolutePath,
-                fileSizeBytes = binaryBytes.size.toLong(),
-                createdAtMillis = document.createdAtMillis,
-                updatedAtMillis = document.updatedAtMillis,
-                courseName = document.courseName
-            )
-            noteDao.upsertNote(entity)
-            entity.toSummary()
+            if (thumbFile != null) {
+                val updatedEntity = initialEntity.copy(thumbnailPath = thumbFile.absolutePath)
+                noteDao.upsertNote(updatedEntity)
+                updatedEntity.toSummary()
+            } else {
+                initialEntity.toSummary()
+            }
         }
 
     override suspend fun deleteNote(noteId: String) = withContext(ioDispatcher) {

@@ -357,7 +357,7 @@ val TabletNotesShapes = Shapes(
     small = RoundedCornerShape(14.dp),
     medium = RoundedCornerShape(24.dp),
     large = RoundedCornerShape(24.dp),
-    extraLarge = CircleShape
+    extraLarge = RoundedCornerShape(24.dp)
 )
 
 @Composable
