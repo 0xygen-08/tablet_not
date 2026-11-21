@@ -3,9 +3,13 @@
 .kotlin/
 **/build/
 !src/**/build/
+*.apk
+*.aab
 
 # Yerel Yapılandırma (SDK yolu, özel anahtarlar vb.)
 local.properties
+.env
+.env.*
 
 # Android Studio / IntelliJ IDEA
 .idea/
@@ -21,8 +25,16 @@ captures/
 .DS_Store
 Thumbs.db
 
-# Anahtar Deposu (Keystore) ve Hassas Dosyalar
+# Anahtar Deposu (Keystore) ve Hassas Firebase / Google Dosyaları
 *.jks
 *.keystore
 google-services.json
+*service-account*.json
+*firebase-adminsdk*.json
 
+# Firebase Emulator & Node Test Çıktıları
+.firebase/
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
+node_modules/
