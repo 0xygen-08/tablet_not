@@ -192,3 +192,260 @@ Seçimleriniz doğrultusunda aşağıdaki kararlar kesinleşmiştir:
 3. **Tuval Sayfa Yapısı:** **Dikey Çoklu Sayfa (A4 / Tablet oranlı sayfalar, aşağı doğru yeni sayfa eklenebilen yapı)** kullanılacak.
 4. **Tema ve Tasarım Sistemi:** Klasördeki `stitch_minimalist_social_notes_tablet.zip` tasarımındaki renk paleti (`Charcoal 950–100`, kareli defter dokusu, `18dp–22dp` squircle köşe yuvarlatmaları) başlangıç teması olarak kurulacak; ancak tüm renkler ve şekiller tek bir `ThemePalette` yapısı üzerinden yönetileceği için istediğiniz zaman tek satırla farklı temalarla (ör. Açık Kağıt Teması vb.) değiştirilebilecek.
 
+
+
+---
+
+# Faz 2 (Phase 2) — Firebase Spark (Ücretsiz Plan) Hesaplar, Arkadaşlar, 1:1 Sohbet ve Gruplar Planı
+
+> [!IMPORTANT]
+> **ÖNEMLİ GÜVENLİK VE TEST SÜRÜMÜ NOTU (FAZ 2):**
+> Faz 2'de tüm veriler **tamamen ücretsiz Firebase Spark Planı** üzerinde (`Firebase Authentication` + `Cloud Firestore`) tutulur; kredi kartı veya Blaze/ücretli plan kesinlikle kullanılmaz.
+> Bu aşamada **mesajlar Uçtan Uca Şifreli (E2EE) DEĞİLDİR** — mesajların şifrelenmesi ve sunucu üzerinden not dosyası paylaşımı **Faz 3** kapsamındadır. Bu durum hem burada hem de uygulamanın Ayarlar ekranında kısa bir **"Test Sürümü"** uyarısı ile kullanıcıya açıkça gösterilecektir. **Herkese açık profillerde (`users/{uid}`) e-posta adresi veya telefon numarası kesinlikle saklanmaz.**
+
+---
+
+## 7. Faz 2 Kısıtları ve Faz 3'e Bırakılan (Kapsam Dışı) Özellikler
+
+### Spark Ücretsiz Plan Sınırları
+- **İzin Verilen Servisler:** `Firebase Authentication` (E-posta/Şifre + Google ile Giriş + Şifre Sıfırlama) ve `Cloud Firestore` (+ isteğe bağlı `Crashlytics`).
+- **Yasak / Kullanılmayan Servisler:** `Cloud Storage`, `Cloud Functions` (sunucu kodu yok) ve kredi kartı/Blaze planı gerektiren hiçbir servis eklenmeyecektir.
+- Tüm yetkilendirme ve güvenlik kontrolleri doğrudan **Firestore Security Rules (`firestore.rules`)** tarafından zorunlu kılınacaktır (istemci hiçbir zaman güvenilir kabul edilmez).
+- Kota dostu kullanım: Mesajlar sayfalamalı yüklenecek (**limit ~30**), gerçek zamanlı `SnapshotListener` dinleyicileri yalnızca ekranda görünürken bağlanıp ekran kapanınca sökülecek, Firestore çevrimdışı kalıcılığı (**offline persistence**) aktif olacak, periyodik sorgulama (`polling`) veya tüm koleksiyonu okuma (`list`) yapılmayacaktır.
+
+### Kapsam Dışı — Faz 3'e Bırakılan Özellikler (`Out of Scope`)
+Aşağıdaki özellikler Faz 2'de **yapılmayacaktır**; gelecek Faz 3 için ayrılmıştır:
+1. Sunucu üzerinden not veya dosya gönderme (sohbet ekranındaki **"Not Ekle"** butonuna tıklandığında kullanıcıya *"Yakında — Şimdilik yakındaki tabletle Yakın Paylaşım (Nearby) üzerinden not paylaşabilirsiniz"* mesajı gösterilir; Faz 1'deki çevrimdışı Nearby paylaşımı aynen çalışmaya devam eder).
+2. Anlık bildirimler (**Push Notifications / FCM**).
+3. Sunucu tarafında dosyaların otomatik silinmesi (**TTL**).
+4. Mesajlarda **Uçtan Uca Şifreleme (E2EE)**.
+5. Davet linkleri / **Deep Links**.
+6. Profil fotoğrafı yükleme (Cloud Storage gerektirdiği için Faz 2'de yerleşik renkli avatar seçenekleri veya adın baş harfleri kullanılır).
+7. Sunucu taraflı hız sınırlama (**Rate Limiting**).
+8. Hesap silindiğinde diğer kullanıcıların sohbetlerindeki mesajların sunucuda tam temizliği (sunucu kodu olmadan mümkün olmadığı için en iyi çaba — *best-effort* — temizlik yapılır).
+9. Reklamlar ve analitik araçları.
+
+---
+
+## 8. Önerilen Firestore Veri Modeli (Koleksiyonlar ve Örnek Belgeler)
+
+### 1) `users/{uid}` — Herkese Açık Kullanıcı Profili (Listelenemez!)
+> **Gizlilik:** Burada kesinlikle `email` veya `phone` tutulmaz! Kullanıcıya özel ayarlar yalnızca sahibinin okuyabildiği alt belgede veya Auth içinde kalır.
+```json
+{
+  "uid": "u_abc123",
+  "username": "ahmet_yilmaz",
+  "displayName": "Ahmet Yılmaz",
+  "avatarPreset": "cobalt_circle",
+  "createdAt": "ServerTimestamp",
+  "updatedAt": "ServerTimestamp"
+}
+```
+
+### 2) `usernames/{username}` — Benzersiz Kullanıcı Adı İndeksi (Sunucu Kodu Olmadan Uniqueness)
+> Küçük harf, `3-20` karakter, sadece `a-z`, `0-9`, `_`. Kayıt sırasında `WriteBatch` ile hem `usernames/{username}` hem `users/{uid}` birlikte atomik oluşturulur.
+```json
+{
+  "uid": "u_abc123",
+  "username": "ahmet_yilmaz",
+  "createdAt": "ServerTimestamp"
+}
+```
+
+### 3) `friendships/{pairId}` — Arkadaşlık İstekleri ve Arkadaşlık Durumu
+> `pairId = min(uid1, uid2) + "_" + max(uid1, uid2)` şeklinde deterministik üretilir. Böylece iki kullanıcı arasında aynı anda çakışan iki istek belgesi oluşamaz ve güvenlik kuralları `exists()` ile arkadaşlığı tek adımda doğrulayabilir.
+```json
+{
+  "pairId": "u_abc123_u_xyz789",
+  "users": ["u_abc123", "u_xyz789"],
+  "uidA": "u_abc123",
+  "uidB": "u_xyz789",
+  "status": "accepted",
+  "requesterId": "u_abc123",
+  "receiverId": "u_xyz789",
+  "createdAt": "ServerTimestamp",
+  "updatedAt": "ServerTimestamp"
+}
+```
+
+### 4) `blocks/{blockId}` — Engelleme Kayıtları
+> `blockId = blockerUid + "_" + blockedUid`. Güvenlik kuralları hem arkadaşlık isteği atarken hem sohbet açarken/mesaj gönderirken iki yönlü `exists(/databases/.../documents/blocks/{a_b})` kontrolü yapar.
+```json
+{
+  "blockerUid": "u_abc123",
+  "blockedUid": "u_bad999",
+  "createdAt": "ServerTimestamp"
+}
+```
+
+### 5) `direct_chats/{chatId}` — 1:1 Doğrudan Sohbet (Yalnızca Metin)
+> `chatId = min(uid1, uid2) + "_" + max(uid1, uid2)`. Sadece `accepted` arkadaşlar arasında ve engel yoksa oluşturulabilir.
+```json
+{
+  "chatId": "u_abc123_u_xyz789",
+  "participants": ["u_abc123", "u_xyz789"],
+  "participantProfiles": {
+    "u_abc123": { "displayName": "Ahmet Yılmaz", "username": "ahmet_yilmaz", "avatarPreset": "cobalt_circle" },
+    "u_xyz789": { "displayName": "Mehmet Kaya", "username": "mehmet_k", "avatarPreset": "emerald_circle" }
+  },
+  "lastMessageText": "Yarınki fizik ödevini yaptın mı?",
+  "lastMessageSenderId": "u_abc123",
+  "lastMessageAt": "ServerTimestamp",
+  "lastReadAt": {
+    "u_abc123": "ServerTimestamp",
+    "u_xyz789": "Timestamp"
+  },
+  "unreadCount": {
+    "u_abc123": 0,
+    "u_xyz789": 1
+  },
+  "createdAt": "ServerTimestamp",
+  "updatedAt": "ServerTimestamp"
+}
+```
+
+#### Alt Koleksiyon: `direct_chats/{chatId}/messages/{messageId}`
+```json
+{
+  "messageId": "msg_01",
+  "senderId": "u_abc123",
+  "text": "Yarınki fizik ödevini yaptın mı?",
+  "createdAt": "ServerTimestamp"
+}
+```
+
+### 6) `groups/{groupId}` — Çalışma Grupları (Maksimum 50 Üye, Yalnızca Metin)
+```json
+{
+  "groupId": "grp_fizik101",
+  "name": "Fizik — Vektörler Grubu",
+  "description": "Haftalık soru çözümü ve özet paylaşımı",
+  "avatarPreset": "purple_circle",
+  "ownerId": "u_abc123",
+  "memberIds": ["u_abc123", "u_xyz789"],
+  "roles": {
+    "u_abc123": "owner",
+    "u_xyz789": "member"
+  },
+  "memberProfiles": {
+    "u_abc123": { "displayName": "Ahmet Yılmaz", "username": "ahmet_yilmaz", "avatarPreset": "cobalt_circle" },
+    "u_xyz789": { "displayName": "Mehmet Kaya", "username": "mehmet_k", "avatarPreset": "emerald_circle" }
+  },
+  "whoCanSend": "everyone",
+  "lastMessageText": "Akşam 8'de çalışma var.",
+  "lastMessageSenderId": "u_abc123",
+  "lastMessageSenderName": "Ahmet Yılmaz",
+  "lastMessageAt": "ServerTimestamp",
+  "lastReadAt": {
+    "u_abc123": "ServerTimestamp"
+  },
+  "createdAt": "ServerTimestamp",
+  "updatedAt": "ServerTimestamp"
+}
+```
+
+#### Alt Koleksiyon: `groups/{groupId}/messages/{messageId}`
+```json
+{
+  "messageId": "gmsg_01",
+  "senderId": "u_abc123",
+  "senderName": "Ahmet Yılmaz",
+  "text": "Akşam 8'de çalışma var.",
+  "createdAt": "ServerTimestamp"
+}
+```
+
+### 7) `reports/{reportId}` — Kullanıcı / Mesaj Şikayetleri (Yalnızca Oluşturulabilir)
+```json
+{
+  "reporterId": "u_xyz789",
+  "targetType": "user",
+  "targetUserId": "u_bad999",
+  "targetChatId": null,
+  "targetMessageId": null,
+  "reason": "Rahatsız edici mesaj",
+  "createdAt": "ServerTimestamp"
+}
+```
+
+---
+
+## 9. Güvenlik Kuralları (`firestore.rules`) Stratejisi
+
+Sunucu kodu olmadan tam güvenlik şu kurallarla sağlanır:
+1. **`users/{uid}` ve `usernames/{name}`:**
+   - `allow list: if false;` — Tüm kullanıcıları listeleme veya önek arama (prefix search) kesinlikle kapalıdır; sadece tam `@kullanici_adi` veya `uid` ile tekil `get` yapılabilir.
+   - `usernames/{name}` sadece belge mevcut değilse (`!exists`), adı `^[a-z0-9_]{3,20}$` kuralına uyuyorsa ve `request.resource.data.uid == request.auth.uid` ise oluşturulabilir (`allow update: if false`).
+   - `users/{uid}` güncellenirken `username` değiştirilmek istenirse eski/yeni username belgeleriyle atomik tutarlılık aranır veya username değişimi atomik batch ile korunur.
+2. **Engelleme ve Arkadaşlık (`blocks` & `friendships`):**
+   - `blocks/{blockId}`: Sadece `blockerUid == request.auth.uid` tarafından okunabilir/oluşturulabilir/silinebilir (ayrıca güvenlik kuralları içinde `isBlockedBetween(u1, u2)` yardımcı fonksiyonu ile iki kullanıcı birbirine istek/sohbet gönderirken `exists` kontrolü yapılır).
+   - `friendships/{pairId}`: Sadece `pairId` içindeki iki taraftan biri okuyabilir; oluştururken `!isBlockedBetween` ve `status == "pending"` + `requesterId == request.auth.uid` zorunludur. `accepted` durumuna yalnızca `receiverId` geçebilir; iptal/red/arkadaşlıktan çıkarma (`delete`) işlemini her iki taraf da yapabilir.
+3. **Doğrudan Sohbet (`direct_chats` & `messages`):**
+   - Oluşturma (`create`): `friendships/{chatId}` belgesi mevcut ve `status == "accepted"` olmalı, ayrıca `!isBlockedBetween(u1, u2)` sağlanmalıdır.
+   - Okuma/Yazma: Sadece `participants` içindeki üyeler (`request.auth.uid in resource.data.participants`).
+   - Mesaj ekleme: `senderId == request.auth.uid`, `!isBlockedBetween(...)`, `text` uzunluğu `1..2000`, `createdAt == request.time`.
+   - Mesaj düzenleme (`update`): Herkese yasak (`false`); silme (`delete`): Yalnızca `resource.data.senderId == request.auth.uid`.
+4. **Gruplar (`groups` & `messages`):**
+   - Üye sayısı `memberIds.size() <= 50`.
+   - Rol kontrolleri `roles[request.auth.uid]` üzerinden yapılır:
+     - `owner`: Grubu silebilir, `admin` atayabilir/alabilir.
+     - `admin` / `owner`: Üye ekleyebilir (sadece kendi arkadaşları UI'da seçilir, maks 50 üye kuralda zorlanır), üye çıkarabilir, grup adı/açıklaması/avatarı ve `whoCanSend` (`everyone` | `admins_only`) ayarını değiştirebilir.
+     - `member`: Sadece gruptan ayrılabilir (`memberIds` ve `roles` içinden yalnızca kendi `uid`'sini kaldırır).
+   - Mesaj gönderme: `whoCanSend == "everyone"` ise tüm üyeler; `whoCanSend == "admins_only"` ise yalnızca `owner` veya `admin` mesaj gönderebilir.
+5. **Şikayetler (`reports`):**
+   - `allow create` (yalnızca `reporterId == request.auth.uid`); `allow read, update, delete: if false`.
+6. **`google-services.json` Hakkında Not:**
+   - Proje `.gitignore` dosyasında `google-services.json` **hariç tutulmuştur** ve herkese açık (Public) GitHub deposuna **yüklenmemelidir**. Her geliştirici kendi Firebase projesinden indirdiği `google-services.json` dosyasını yerel olarak `app/google-services.json` konumuna koyar.
+
+---
+
+## 10. Okunmamış Mesaj Maliyeti ve QR Kodu Kütüphanesi Seçimi
+
+### A. Okunmamış Mesaj (Unread Badge) Tasarımı ve Okuma Maliyeti
+- **Ucuz ve Kota Dostu Çözüm:** Okunmamış mesaj sayısını hesaplamak için her sohbetin alt koleksiyonundaki mesajları (`messages`) sorgularsak her sohbet için onlarca ekstra Firestore okuma maliyeti doğar.
+- Bunun yerine **okunmamış bilgisini doğrudan üst sohbet belgesinin içinde** saklıyoruz (`direct_chats/{chatId}` ve `groups/{groupId}`):
+  - `lastReadAt.{uid}`: Kullanıcının sohbeti en son açtığı an.
+  - `lastMessageAt` ve `lastMessageSenderId`: En son mesajın zamanı ve göndereni.
+  - `unreadCount.{uid}`: Gönderen kişi son mesajı yazarken karşı tarafın `unreadCount` değerini atomik `FieldValue.increment(1)` ile artırır; alıcı sohbeti açtığında kendi `unreadCount.{uid}` alanını `0` ve `lastReadAt.{uid}` alanını `serverTimestamp()` olarak sıfırlar.
+- **Okuma Maliyeti:** Sohbet listesi zaten açık olan sohbet belgelerini (`limit ~30`) okuduğu için **okunmamış nokta/sayı göstermek 0 ekstra Firestore okuma maliyetine** sahiptir!
+
+### B. QR Kodu Kütüphanesi Seçimi (Neden Daha Basit?)
+- **QR Oluşturma:** `com.google.zxing:core` (sadece birkaç yüz KB'lık saf Kotlin/Java kütüphanesi, ağ izni veya ağır kamera bağımlılığı yok; kendi `@kullanici_adi` verimizi anında siyah-beyaz QR bitmap'ine dönüştürür).
+- **QR Okutma:** **Google Play Services Code Scanner (`com.google.android.gms:play-services-code-scanner`)** seçiyoruz. Çünkü kamera önizlemesi, odaklama ve `CAMERA` izni diyaloğunu Google Play Services kendisi hazır bir tam ekran pencere olarak yönetir; uygulamamıza ekstra CameraX/SurfaceView kodu eklemeye gerek kalmaz (Google Play Services olmayan sade emülatörlerde ise kullanıcı `@kullanici_adi` arama kutusundan da aynı işlemi anında yapabilir).
+
+---
+
+## 11. Ekran / Navigasyon Değişiklikleri ve Spark Kota Tahmini
+
+### Ekran ve Navigasyon Akışı
+- Mevcut üst pill sekme çubuğu korunur: **`Notlar` | `Arkadaşlar` | `Gruplar`**.
+- **Çıkış Yapılmışken Faz 1 Koruması:** Kullanıcı oturum açmamışken (`FirebaseAuth.currentUser == null`) **`Notlar` sekmesi ve `Yakın Paylaşım (Nearby)` %100 çalışmaya devam eder**. `Arkadaşlar` ve `Gruplar` sekmelerinde ise dostça *"Giriş Yap / Hesap Oluştur"* ekranı görünür.
+- **`Arkadaşlar` ve `Gruplar` Sekmesi (Tablet Yatay & Dikey Uyumu):**
+  - Sağ alttaki `+` butonu kısa bir menü açar: **`Arkadaş Ekle (@kullanıcı adı / QR)`** ve **`Yeni Grup Oluştur`**.
+  - Tablet yatay modda: Sol listede sohbetler/gruplar, sağda açık sohbet ekranı (*list-detail*). Dikey mod ve telefonlarda: Tek panel (*list -> detail*).
+  - Arkadaşlık istekleri (gelen / giden / engellenenler) ve QR Tarama / QR Gösterme temiz alt sayfa veya modal olarak açılır.
+  - Hesap ve Ayarlar ekranı (profil düzenleme, tema seçimi, "Test Sürümü — E2EE Faz 3'te" notu, çıkış yap, hesabı sil).
+
+### Spark Ücretsiz Plan Kota Tahmini
+- Spark ücretsiz limitleri: **Günde 50.000 okuma**, **20.000 yazma**, **20.000 silme**.
+- Sayfalama (`limit(30)`), sohbet listesinde gömülü `unreadCount`, aktif ekran dışı dinleyicileri kapatma ve Firestore yerel önbellek (`persistenceEnabled = true`) sayesinde 1 aktif öğrencinin günlük tüketimi ortalama **~150–400 okuma** ve **~40–100 yazma** civarında kalır; yani küçük/orta bir sınıf veya arkadaş grubu ücretsiz Spark kotası içinde rahatça çalışır.
+
+### Riskler ve Dikkat Edilecekler
+| Risk | Etki | Çözüm |
+| :--- | :--- | :--- |
+| **Sunucu kodu olmadan hesap silme** | Kullanıcı silindiğinde başka kişilerin sohbetlerindeki eski mesajlar `senderId` olarak kalır. | Kullanıcının kendi `users/{uid}`, `usernames/{name}`, kendi arkadaşlık/engel kayıtları ve grup üyelikleri temizlenip Auth hesabı silinir; diğer kişilerin sohbet alt koleksiyonlarındaki mesajlar güvenlik gereği istemci tarafından toplu taranamaz — bu sınırlama **Faz 3 (Cloud Functions)** için dokümante edilir. |
+| **Dinleyici (Listener) sızıntısı** | Ekran değişiminde açık kalan dinleyiciler kotayı harcar. | Her `SnapshotListener`, Jetpack Compose yaşam döngüsüne / ViewModel'e `DisposableEffect` veya `callbackFlow` ile bağlanır ve ekran görünmez olduğunda anında iptal edilir. |
+| **Çift cihaz / İki hesap gerektiren testler** | Arkadaşlık ve 1:1 sohbeti tam test etmek tek cihazda sınırlıdır. | İki farklı test e-posta/Google hesabıyla emülatör + gerçek tablet üzerinden paralel test adımları her kilometre taşı sonunda paylaşılacaktır. |
+
+---
+
+## 12. Faz 2 Kilometre Taşı Planı (M1 – M7)
+
+Her adım tek tek uygulanıp sizin onayınızla bir sonrakine geçilecektir:
+- **M1 — Firebase Kurulumu:** Size Firebase Console'da atacağınız adım adım talimatları vereceğim; siz `google-services.json` dosyasını indirip koyduktan sonra uygulamayı Firebase Auth + Firestore offline persistence ile bağlayacağım.
+- **M2 — Kimlik Doğrulama, Profil ve Benzersiz `@kullanici_adi`:** E-posta+Şifre kayıt/giriş, Google ile Giriş, Şifre Sıfırlama, atomik `usernames/{name}` + `users/{uid}` batch kaydı, yerleşik avatar seçimi, profil düzenleme, çıkış yapıldığında Faz 1'in çalışmaya devam etmesi.
+- **M3 — Arkadaşlar (Tam Arama, QR, İstekler, Engelleme, Şikayet):** Tam `@kullanici_adi` arama, ZXing + Play Services Code Scanner ile QR göster/oku, istek gönder/kabul/red/iptal/arkadaşlıktan çıkar, engelle/engeli kaldır, yalnızca oluşturulabilir `reports`.
+- **M4 — Doğrudan 1:1 Sohbet (Yalnızca Metin) ve Okunmamış Sayacı:** Gerçek zamanlı mesajlaşma (`limit(30)`), gönderiliyor/gönderildi/hata+yeniden dene durumları, tarih ayırıcıları, kendi mesajını silme, max 2000 karakter, "Not Ekle" için "Yakında" mesajı, `unreadCount` + arama filtresi.
+- **M5 — Çalışma Grupları, Roller ve Grup Ayarları:** Arkadaşlardan grup kurma (max 50 üye), `owner/admin/member` rolleri, rol yönetimi, "kimler mesaj atabilir", gruptan ayrılma, grubu silme (owner), yerel sessize alma (mute).
+- **M6 — Hesap Silme, Ayarlar Ekranı, Hata ve Çevrimdışı İyileştirmeleri:** Yeniden doğrulama (*re-authenticate*) ile hesap silme, Ayarlar ekranında "Test Sürümü — E2EE yok" uyarısı, internet yokken önbellek banner'ı, Türkçe dostça hata mesajları.
+- **M7 — Güvenlik Kuralları, Emulator Testleri, Tablet Düzeni ve Son İnceleme:** `firestore.rules`, `firestore.indexes.json`, `@firebase/rules-unit-testing` test paketi, yatay/dikey tablet düzeni cilalaması ve son kontrol.
