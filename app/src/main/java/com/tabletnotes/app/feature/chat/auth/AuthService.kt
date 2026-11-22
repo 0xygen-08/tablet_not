@@ -172,27 +172,19 @@ class HybridAuthService @Inject constructor(
             throw InvalidUsernameFormatException()
         }
 
-        // Kullanıcı adını önceden kontrol et (ardından batch + Rules kesin garanti sağlar)
-        val existingUsername = firestore.collection("usernames").document(normalizedUsername).get().await()
-        if (existingUsername.exists()) {
-            throw UsernameAlreadyTakenException()
-        }
-
+        // Kullanıcı adını giriş yapmadan sorgulamak (request.auth == null) güvenlik kuralına takılır;
+        // önce Auth hesabı açılır, ardından token yenilenip atomik batch ile kullanıcı adı ayrılır.
         val authResult = auth.createUserWithEmailAndPassword(email.trim(), password).await()
         val firebaseUser = authResult.user ?: throw NotSignedInException()
+        firebaseUser.getIdToken(false).await()
 
-        try {
-            claimUsernameAndWriteProfile(
-                uid = firebaseUser.uid,
-                authEmail = firebaseUser.email ?: email.trim(),
-                displayName = cleanDisplayName,
-                username = normalizedUsername,
-                avatarPreset = avatarPreset
-            )
-        } catch (e: Exception) {
-            // Kullanıcı adı son milisaniyede başkası tarafından kapıldıysa kullanıcı profili kurulum ekranında başka ad seçebilir
-            throw e
-        }
+        claimUsernameAndWriteProfile(
+            uid = firebaseUser.uid,
+            authEmail = firebaseUser.email ?: email.trim(),
+            displayName = cleanDisplayName,
+            username = normalizedUsername,
+            avatarPreset = avatarPreset
+        )
     }
 
     override suspend fun signInWithEmail(email: String, password: String): Result<Unit> = runCatching {
@@ -427,14 +419,16 @@ class HybridAuthService @Inject constructor(
 
         val resolvedAvatar = AvatarPreset.fromId(avatarPreset).id
         val batch = firestore.batch()
-        batch.set(
-            usernameRef,
-            mapOf(
-                "uid" to uid,
-                "username" to username,
-                "createdAt" to FieldValue.serverTimestamp()
+        if (!existing.exists()) {
+            batch.set(
+                usernameRef,
+                mapOf(
+                    "uid" to uid,
+                    "username" to username,
+                    "createdAt" to FieldValue.serverTimestamp()
+                )
             )
-        )
+        }
         // Gizlilik: users/{uid} içinde kesinlikle email/phone yok!
         batch.set(
             userRef,

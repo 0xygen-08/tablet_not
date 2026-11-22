@@ -198,7 +198,12 @@ class FirestoreMessagingRepository @Inject constructor(
             .orderBy("createdAt", Query.Direction.DESCENDING)
             .limit(PAGE_SIZE.toLong())
             .addSnapshotListener { snapshot, error ->
-                if (error != null || snapshot == null) return@addSnapshotListener
+                if (error != null) {
+                    activeMessagesListener?.remove()
+                    activeMessagesListener = null
+                    return@addSnapshotListener
+                }
+                if (snapshot == null) return@addSnapshotListener
                 val docs = snapshot.documents
                 newestSnapshotsTail = docs.lastOrNull()
                 if (_olderPagedMessages.value.isEmpty()) {
@@ -345,6 +350,9 @@ class FirestoreMessagingRepository @Inject constructor(
                 )
             )
             batch.commit().await()
+            if (!existingChat.exists()) {
+                attachActiveConversationListener(chatId, isGroup = false)
+            }
             removeOptimisticMessage(localId)
             Unit
         }.onFailure {

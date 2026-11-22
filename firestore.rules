@@ -152,7 +152,11 @@ service cloud.firestore {
             : getAfter(/databases/$(database)/documents/direct_chats/$(chatId)).data;
         }
 
-        allow read: if isSignedIn() && request.auth.uid in chatDoc().participants;
+        allow read: if isSignedIn() && (
+          chatId.matches('^' + request.auth.uid + '_.*') ||
+          chatId.matches('.*_' + request.auth.uid + '$') ||
+          request.auth.uid in chatDoc().participants
+        );
 
         allow create: if isSignedIn() &&
           request.auth.uid in chatDoc().participants &&
