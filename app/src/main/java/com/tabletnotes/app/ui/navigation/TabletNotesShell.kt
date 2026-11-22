@@ -80,7 +80,11 @@ import com.tabletnotes.app.core.designsystem.components.GraphGridBackground
 import com.tabletnotes.app.core.designsystem.theme.CourseFolderPalette
 import com.tabletnotes.app.core.designsystem.theme.TabletNotesTheme
 import com.tabletnotes.app.core.designsystem.theme.ThemePreset
+import com.tabletnotes.app.domain.model.AccountAuthState
 import com.tabletnotes.app.domain.repository.NoteSummary
+import com.tabletnotes.app.feature.chat.auth.AccountSheetDialog
+import com.tabletnotes.app.feature.chat.auth.SignedOutChatGateCard
+import com.tabletnotes.app.feature.chat.auth.UserAvatarBadge
 import com.tabletnotes.app.feature.chat.ui.ChatScreen
 import com.tabletnotes.app.feature.chat.ui.ChatViewModel
 import com.tabletnotes.app.feature.editor.ui.NoteEditorScreen
@@ -120,7 +124,10 @@ fun TabletNotesShell(
     val customCourses by workspaceViewModel.customCourses.collectAsState()
     val selectedCourse by workspaceViewModel.selectedCourseFilter.collectAsState()
     val autosaveStatus by workspaceViewModel.autosaveStatus.collectAsState()
-    val currentUser by chatViewModel.currentUser.collectAsState()
+    val accountAuthState by chatViewModel.accountAuthState.collectAsState()
+    val authBusy by chatViewModel.authBusy.collectAsState()
+    val authErrorRes by chatViewModel.authErrorRes.collectAsState()
+    val authInfoRes by chatViewModel.authInfoRes.collectAsState()
     val allContacts by chatViewModel.contacts.collectAsState()
     val defaultNoteTitlePrefix = stringResource(R.string.notes_default_title_format)
 
@@ -225,7 +232,11 @@ fun TabletNotesShell(
                         onSelectTab = { selectedTab = it },
                         currentTheme = currentTheme,
                         onSelectTheme = onSelectTheme,
-                        onProfileClick = { showProfileDialog = true },
+                        accountAuthState = accountAuthState,
+                        onProfileClick = {
+                            chatViewModel.clearAuthFeedback()
+                            showProfileDialog = true
+                        },
                         onToggleSearch = {
                             showNotesSearchBar = !showNotesSearchBar
                             if (!showNotesSearchBar) notesSearchQuery = ""
@@ -260,17 +271,39 @@ fun TabletNotesShell(
                                 }
                             )
 
-                            TopTabDestination.FRIENDS_CHAT -> ChatScreen(
-                                viewModel = chatViewModel,
-                                onOpenNoteInEditor = { noteId -> workspaceViewModel.openExistingNote(noteId) },
-                                showGroupsOnly = false
-                            )
+                            TopTabDestination.FRIENDS_CHAT -> {
+                                if (accountAuthState is AccountAuthState.SignedIn) {
+                                    ChatScreen(
+                                        viewModel = chatViewModel,
+                                        onOpenNoteInEditor = { noteId -> workspaceViewModel.openExistingNote(noteId) },
+                                        showGroupsOnly = false
+                                    )
+                                } else {
+                                    SignedOutChatGateCard(
+                                        onOpenAuthDialog = {
+                                            chatViewModel.clearAuthFeedback()
+                                            showProfileDialog = true
+                                        }
+                                    )
+                                }
+                            }
 
-                            TopTabDestination.GROUPS_CHAT -> ChatScreen(
-                                viewModel = chatViewModel,
-                                onOpenNoteInEditor = { noteId -> workspaceViewModel.openExistingNote(noteId) },
-                                showGroupsOnly = true
-                            )
+                            TopTabDestination.GROUPS_CHAT -> {
+                                if (accountAuthState is AccountAuthState.SignedIn) {
+                                    ChatScreen(
+                                        viewModel = chatViewModel,
+                                        onOpenNoteInEditor = { noteId -> workspaceViewModel.openExistingNote(noteId) },
+                                        showGroupsOnly = true
+                                    )
+                                } else {
+                                    SignedOutChatGateCard(
+                                        onOpenAuthDialog = {
+                                            chatViewModel.clearAuthFeedback()
+                                            showProfileDialog = true
+                                        }
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -280,128 +313,35 @@ fun TabletNotesShell(
 
     // --- DİYALOGLAR (Tamamı 24dp yuvarlatılmış dikdörtgen formunda!) ---
 
-    // 1. Profil ve Google Hesabı Diyaloğu
-    if (showProfileDialog) {
-        var nameInput by rememberSaveable(currentUser.displayName) { mutableStateOf(currentUser.displayName) }
-
-        AlertDialog(
-            onDismissRequest = { showProfileDialog = false },
-            shape = RoundedCornerShape(24.dp),
-            containerColor = palette.surfaceElevated,
-            title = {
-                Text(
-                    text = stringResource(R.string.chat_auth_dialog_title),
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                    color = palette.textPrimary
-                )
+    // 1. Firebase Hesap, Giriş, Profil & Benzersiz Kullanıcı Adı Diyaloğu
+    if (showProfileDialog || accountAuthState is AccountAuthState.NeedsProfileSetup) {
+        AccountSheetDialog(
+            authState = accountAuthState,
+            isBusy = authBusy,
+            errorMessageRes = authErrorRes,
+            infoMessageRes = authInfoRes,
+            onDismiss = {
+                showProfileDialog = false
+                chatViewModel.clearAuthFeedback()
             },
-            text = {
-                Column(
-                    modifier = Modifier.widthIn(min = 380.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    OutlinedTextField(
-                        value = nameInput,
-                        onValueChange = { nameInput = it },
-                        label = { Text(stringResource(R.string.profile_username_label)) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    HorizontalDivider(color = palette.borderSubtle)
-
-                    // Görsel Google Hesabı ile Giriş Yap Alanı
-                    Surface(
-                        color = if (currentUser.isGoogleConnected) {
-                            palette.statusReadyEmerald.copy(alpha = 0.14f)
-                        } else {
-                            palette.surface
-                        },
-                        shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(
-                            1.dp,
-                            if (currentUser.isGoogleConnected) palette.statusReadyEmerald else palette.border
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(14.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.AccountCircle,
-                                    contentDescription = null,
-                                    tint = if (currentUser.isGoogleConnected) palette.statusReadyEmerald else palette.primaryAccent,
-                                    modifier = Modifier.size(28.dp)
-                                )
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = if (currentUser.isGoogleConnected) {
-                                            stringResource(
-                                                R.string.profile_google_connected_fmt,
-                                                currentUser.googleEmail ?: "ogrenci@gmail.com"
-                                            )
-                                        } else {
-                                            stringResource(R.string.profile_google_signin_btn)
-                                        },
-                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                                        color = palette.textPrimary
-                                    )
-                                    Text(
-                                        text = "E2EE Anahtar: ${currentUser.keyFingerprint}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = palette.textMuted
-                                    )
-                                }
-                            }
-
-                            if (!currentUser.isGoogleConnected) {
-                                Button(
-                                    onClick = { chatViewModel.toggleGoogleSignInVisual(connect = true) },
-                                    shape = CircleShape,
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.AccountCircle,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(stringResource(R.string.profile_google_signin_btn))
-                                }
-                            } else {
-                                OutlinedButton(
-                                    onClick = { chatViewModel.toggleGoogleSignInVisual(connect = false) },
-                                    shape = CircleShape,
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text(stringResource(R.string.profile_google_disconnect))
-                                }
-                            }
-                        }
-                    }
-                }
+            onSignInEmail = { email, password -> chatViewModel.signInWithEmail(email, password) },
+            onSignUpEmail = { email, password, displayName, username, avatarPreset ->
+                chatViewModel.signUpWithEmail(email, password, displayName, username, avatarPreset)
             },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        chatViewModel.signInOrUpdateProfile(nameInput, currentUser.emailOrPhone)
-                        showProfileDialog = false
-                    },
-                    shape = CircleShape
-                ) {
-                    Text(stringResource(R.string.chat_auth_save_login))
-                }
+            onGoogleIdToken = { token -> chatViewModel.signInWithGoogleIdToken(token) },
+            onGoogleSignInError = { resId -> chatViewModel.setAuthErrorRes(resId) },
+            onCompleteProfileSetup = { displayName, username, avatarPreset ->
+                chatViewModel.completeProfileSetup(displayName, username, avatarPreset)
             },
-            dismissButton = {
-                TextButton(onClick = { showProfileDialog = false }) {
-                    Text(stringResource(R.string.editor_text_dialog_cancel))
-                }
-            }
+            onUpdateProfile = { displayName, username, avatarPreset ->
+                chatViewModel.updateAccountProfile(displayName, username, avatarPreset)
+            },
+            onSendPasswordReset = { email -> chatViewModel.sendPasswordReset(email) },
+            onSignOut = {
+                chatViewModel.signOutAccount()
+                showProfileDialog = false
+            },
+            onClearFeedback = { chatViewModel.clearAuthFeedback() }
         )
     }
 
@@ -596,6 +536,7 @@ private fun TabletTopNavigationBar(
     onSelectTab: (TopTabDestination) -> Unit,
     currentTheme: ThemePreset,
     onSelectTheme: (ThemePreset) -> Unit,
+    accountAuthState: AccountAuthState,
     onProfileClick: () -> Unit,
     onToggleSearch: () -> Unit,
     onOpenNearbyShare: () -> Unit,
@@ -619,12 +560,20 @@ private fun TabletTopNavigationBar(
             modifier = Modifier.size(38.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = Icons.Default.PersonOutline,
-                    contentDescription = stringResource(R.string.chat_auth_button),
-                    tint = palette.textPrimary,
-                    modifier = Modifier.size(19.dp)
-                )
+                if (accountAuthState is AccountAuthState.SignedIn) {
+                    UserAvatarBadge(
+                        displayName = accountAuthState.profile.displayName,
+                        avatarPresetId = accountAuthState.profile.avatarPreset,
+                        size = 34.dp
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.PersonOutline,
+                        contentDescription = stringResource(R.string.chat_auth_button),
+                        tint = palette.textPrimary,
+                        modifier = Modifier.size(19.dp)
+                    )
+                }
             }
         }
 

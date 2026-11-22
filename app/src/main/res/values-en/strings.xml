@@ -183,4 +183,46 @@
     <string name="nearby_cancel_transfer_btn">İptal Et</string>
     <string name="nearby_retry_transfer_btn">Yeniden Dene</string>
     <string name="nearby_simulate_receive_btn">Test: Yakındaki Tabletten Not Al</string>
+
+    <!-- Phase 2 M2: Account, Sign-In, Profile & Unique Username -->
+    <string name="auth_title_sign_in">Sign In to Your Account</string>
+    <string name="auth_title_sign_up">Create New Account</string>
+    <string name="auth_title_complete_profile">Complete Your Profile</string>
+    <string name="auth_title_profile">My Profile &amp; Account</string>
+    <string name="auth_tab_sign_in">Sign In</string>
+    <string name="auth_tab_sign_up">Sign Up</string>
+    <string name="auth_email_label">E-mail Address</string>
+    <string name="auth_password_label">Password (min 6 chars)</string>
+    <string name="auth_display_name_label">Display Name</string>
+    <string name="auth_username_label">Username (@name)</string>
+    <string name="auth_username_hint">Lowercase a-z, digits 0-9, underscore _ • 3-20 chars</string>
+    <string name="auth_avatar_picker_label">Choose Avatar Color / Icon</string>
+    <string name="auth_btn_sign_in">Sign In</string>
+    <string name="auth_btn_create_account">Create Account</string>
+    <string name="auth_btn_google_sign_in">Sign In with Google</string>
+    <string name="auth_btn_forgot_password">Forgot Password</string>
+    <string name="auth_btn_save_profile">Save Profile</string>
+    <string name="auth_btn_sign_out">Sign Out</string>
+    <string name="auth_password_reset_sent">Password reset link sent to your email address.</string>
+    <string name="auth_profile_saved_notice">Profile updated ✓</string>
+    <string name="auth_test_version_notice_title">Test Version Notice</string>
+    <string name="auth_test_version_notice_body">In this test version, chat messages are not end-to-end encrypted (E2EE) yet and note files are not sent through the server. You can continue sharing notes offline via Nearby Sharing.</string>
+    <string name="auth_signed_out_gate_title">Sign In for Friends &amp; Groups</string>
+    <string name="auth_signed_out_gate_subtitle">Sign in to add friends, join study groups, and send text messages. Your local notes and Nearby Sharing continue to work fully when signed out.</string>
+    <string name="auth_signed_out_gate_cta">Sign In or Create Account</string>
+    <string name="auth_error_invalid_username">Username must be 3-20 characters using only lowercase letters (a-z), numbers (0-9), and underscores (_).</string>
+    <string name="auth_error_username_taken">That @username is already taken. Please choose another.</string>
+    <string name="auth_error_invalid_display_name">Please enter a display name between 1 and 50 characters.</string>
+    <string name="auth_error_firebase_not_configured">Firebase is not configured yet (google-services.json missing).</string>
+    <string name="auth_error_not_signed_in">Please sign in first to continue.</string>
+    <string name="auth_error_weak_password">Password is too weak. Please choose at least 6 characters.</string>
+    <string name="auth_error_email_already_in_use">An account with this email already exists.</string>
+    <string name="auth_error_user_not_found">No account found for that email address.</string>
+    <string name="auth_error_invalid_email">Please enter a valid email address.</string>
+    <string name="auth_error_invalid_credentials">Incorrect email or password. Please check and try again.</string>
+    <string name="auth_error_too_many_requests">Too many attempts. Please try again in a moment.</string>
+    <string name="auth_error_network">Could not connect to the internet. Please check your connection.</string>
+    <string name="auth_error_permission_denied">You do not have permission for this action.</string>
+    <string name="auth_error_google_not_configured">To use Google Sign-In, add your SHA-1 fingerprint in Firebase Project Settings and re-download google-services.json.</string>
+    <string name="auth_error_generic">Something went wrong. Please check your inputs and try again.</string>
 </resources>

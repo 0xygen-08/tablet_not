@@ -1,5 +1,64 @@
 package com.tabletnotes.app.domain.model
 
+import java.util.Locale
+
+enum class AvatarPreset(
+    val id: String,
+    val colorArgb: Int,
+    val iconKey: String? = null
+) {
+    COBALT_INITIALS("cobalt_circle", 0xFF2B63D9.toInt()),
+    EMERALD_INITIALS("emerald_circle", 0xFF16794B.toInt()),
+    PURPLE_INITIALS("purple_circle", 0xFF6B38E8.toInt()),
+    CORAL_INITIALS("coral_circle", 0xFFDC4C46.toInt()),
+    AMBER_INITIALS("amber_circle", 0xFFD97706.toInt()),
+    TEAL_INITIALS("teal_circle", 0xFF0E7490.toInt()),
+    STAR_PRESET("star_preset", 0xFF4F46E5.toInt(), iconKey = "star"),
+    BOLT_PRESET("bolt_preset", 0xFF059669.toInt(), iconKey = "bolt");
+
+    companion object {
+        fun fromId(id: String?): AvatarPreset =
+            entries.firstOrNull { it.id == id } ?: COBALT_INITIALS
+    }
+}
+
+object UsernameValidator {
+    private val REGEX = Regex("^[a-z0-9_]{3,20}$")
+
+    fun normalize(input: String): String =
+        input.trim().removePrefix("@").lowercase(Locale.ROOT)
+
+    fun isValid(username: String): Boolean =
+        REGEX.matches(username)
+}
+
+/**
+ * Herkese açık kullanıcı profili (`users/{uid}`).
+ * Gizlilik kuralı: E-posta adresi veya telefon numarası kesinlikle burada tutulmaz.
+ */
+data class PublicUserProfile(
+    val uid: String,
+    val username: String,
+    val displayName: String,
+    val avatarPreset: String = AvatarPreset.COBALT_INITIALS.id,
+    val createdAtMillis: Long = 0L,
+    val updatedAtMillis: Long = 0L
+)
+
+sealed interface AccountAuthState {
+    data object Loading : AccountAuthState
+    data object SignedOut : AccountAuthState
+    data class NeedsProfileSetup(
+        val uid: String,
+        val suggestedDisplayName: String,
+        val authEmail: String?
+    ) : AccountAuthState
+    data class SignedIn(
+        val profile: PublicUserProfile,
+        val authEmail: String?
+    ) : AccountAuthState
+}
+
 enum class ChatMessageType {
     TEXT,
     NOTE_ATTACHMENT

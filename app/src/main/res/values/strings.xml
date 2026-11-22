@@ -183,4 +183,46 @@
     <string name="nearby_cancel_transfer_btn">İptal Et</string>
     <string name="nearby_retry_transfer_btn">Yeniden Dene</string>
     <string name="nearby_simulate_receive_btn">Test: Yakındaki Tabletten Not Al</string>
+
+    <!-- Faz 2 M2: Hesap, Giriş, Profil & Benzersiz Kullanıcı Adı -->
+    <string name="auth_title_sign_in">Hesaba Giriş Yap</string>
+    <string name="auth_title_sign_up">Yeni Hesap Oluştur</string>
+    <string name="auth_title_complete_profile">Profilini Tamamla</string>
+    <string name="auth_title_profile">Profilim ve Hesabım</string>
+    <string name="auth_tab_sign_in">Giriş Yap</string>
+    <string name="auth_tab_sign_up">Kayıt Ol</string>
+    <string name="auth_email_label">E-posta Adresi</string>
+    <string name="auth_password_label">Şifre (En az 6 karakter)</string>
+    <string name="auth_display_name_label">Görünür Ad Soyad</string>
+    <string name="auth_username_label">Kullanıcı Adı (@ad)</string>
+    <string name="auth_username_hint">Küçük harf, rakam ve alt çizgi (_) • 3-20 karakter</string>
+    <string name="auth_avatar_picker_label">Avatar Rengi / Simgesi Seç</string>
+    <string name="auth_btn_sign_in">Giriş Yap</string>
+    <string name="auth_btn_create_account">Hesap Oluştur</string>
+    <string name="auth_btn_google_sign_in">Google ile Giriş Yap</string>
+    <string name="auth_btn_forgot_password">Şifremi Unuttum</string>
+    <string name="auth_btn_save_profile">Profili Kaydet</string>
+    <string name="auth_btn_sign_out">Çıkış Yap</string>
+    <string name="auth_password_reset_sent">Şifre sıfırlama bağlantısı e-posta adresinize gönderildi.</string>
+    <string name="auth_profile_saved_notice">Profiliniz güncellendi ✓</string>
+    <string name="auth_test_version_notice_title">Test Sürümü Bilgilendirmesi</string>
+    <string name="auth_test_version_notice_body">Bu test sürümünde sohbet mesajları henüz uçtan uca şifreli (E2EE) değildir ve not dosyaları sunucudan gönderilmez. Çizim notlarınızı yakındaki tablete paylaşmak için Yakın Paylaşım (Nearby) özelliğini kullanabilirsiniz.</string>
+    <string name="auth_signed_out_gate_title">Arkadaşlar ve Gruplar İçin Giriş Yap</string>
+    <string name="auth_signed_out_gate_subtitle">Arkadaş eklemek, çalışma gruplarına katılmak ve mesajlaşmak için oturum açın. Yerel notlarınız ve Yakın Paylaşım (Nearby) giriş yapmadan da tamamen çalışır.</string>
+    <string name="auth_signed_out_gate_cta">Giriş Yap veya Hesap Oluştur</string>
+    <string name="auth_error_invalid_username">Kullanıcı adı 3-20 karakter olmalı; yalnızca küçük harf (a-z), rakam (0-9) ve alt çizgi (_) içerebilir.</string>
+    <string name="auth_error_username_taken">Bu @kullanıcı adı zaten başka bir kullanıcı tarafından alınmış.</string>
+    <string name="auth_error_invalid_display_name">Lütfen 1-50 karakter arası geçerli bir görünür ad yazın.</string>
+    <string name="auth_error_firebase_not_configured">Firebase henüz yapılandırılmamış (google-services.json eksik).</string>
+    <string name="auth_error_not_signed_in">Devam etmek için önce giriş yapmalısınız.</string>
+    <string name="auth_error_weak_password">Şifreniz çok zayıf. Lütfen en az 6 karakterli daha güçlü bir şifre belirleyin.</string>
+    <string name="auth_error_email_already_in_use">Bu e-posta adresi ile zaten kayıtlı bir hesap var.</string>
+    <string name="auth_error_user_not_found">Bu e-posta adresine kayıtlı bir kullanıcı bulunamadı.</string>
+    <string name="auth_error_invalid_email">Lütfen geçerli bir e-posta adresi yazın.</string>
+    <string name="auth_error_invalid_credentials">E-posta veya şifre hatalı. Lütfen kontrol edip tekrar deneyin.</string>
+    <string name="auth_error_too_many_requests">Çok fazla deneme yapıldı. Lütfen kısa bir süre sonra tekrar deneyin.</string>
+    <string name="auth_error_network">İnternet bağlantısı kurulamadı. Bağlantınızı kontrol edip tekrar deneyin.</string>
+    <string name="auth_error_permission_denied">Bu işlemi yapmak için yetkiniz yok veya işlem güvenlik kuralına takıldı.</string>
+    <string name="auth_error_google_not_configured">Google ile Giriş için Firebase Proje Ayarlarına SHA-1 parmak izinizi ekleyip güncel google-services.json dosyasını indirmeniz gerekir.</string>
+    <string name="auth_error_generic">İşlem tamamlanamadı. Lütfen bilgilerinizi kontrol edip tekrar deneyin.</string>
 </resources>

@@ -8,6 +8,7 @@ import com.tabletnotes.app.core.database.ChatContactEntity
 import com.tabletnotes.app.core.database.ChatDao
 import com.tabletnotes.app.core.database.ChatMessageEntity
 import com.tabletnotes.app.core.network.ConnectivityObserver
+import com.tabletnotes.app.domain.model.AccountAuthState
 import com.tabletnotes.app.domain.model.ChatContact
 import com.tabletnotes.app.domain.model.ChatMessage
 import com.tabletnotes.app.domain.model.ChatMessageType
@@ -25,6 +26,7 @@ import com.tabletnotes.app.domain.model.UserProfile
 import com.tabletnotes.app.domain.repository.NoteRepository
 import com.tabletnotes.app.domain.repository.NoteSummary
 import com.tabletnotes.app.feature.chat.auth.AuthService
+import com.tabletnotes.app.feature.chat.auth.FirebaseErrorMapper
 import com.tabletnotes.app.feature.chat.relay.NoteFileTooLargeException
 import com.tabletnotes.app.feature.chat.relay.RelayStorage
 import com.tabletnotes.app.feature.format.binary.NoteBinaryCodec
@@ -58,7 +60,18 @@ class ChatViewModel @Inject constructor(
 ) : ViewModel() {
 
     val currentUser: StateFlow<UserProfile> = authService.currentUser
+    val accountAuthState: StateFlow<AccountAuthState> = authService.authState
+    val isFirebaseReady: Boolean get() = authService.isFirebaseReady
     val isOnline: StateFlow<Boolean> = connectivityObserver.isOnline
+
+    private val _authBusy = MutableStateFlow(false)
+    val authBusy: StateFlow<Boolean> = _authBusy.asStateFlow()
+
+    private val _authErrorRes = MutableStateFlow<Int?>(null)
+    val authErrorRes: StateFlow<Int?> = _authErrorRes.asStateFlow()
+
+    private val _authInfoRes = MutableStateFlow<Int?>(null)
+    val authInfoRes: StateFlow<Int?> = _authInfoRes.asStateFlow()
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
@@ -140,6 +153,111 @@ class ChatViewModel @Inject constructor(
     fun toggleGoogleSignInVisual(connect: Boolean, email: String? = null) {
         viewModelScope.launch(ioDispatcher) {
             authService.toggleGoogleSignInVisual(connect, email)
+        }
+    }
+
+    fun clearAuthFeedback() {
+        _authErrorRes.value = null
+        _authInfoRes.value = null
+    }
+
+    fun setAuthErrorRes(resId: Int) {
+        _authErrorRes.value = resId
+        _authInfoRes.value = null
+    }
+
+    fun signInWithEmail(email: String, password: String) {
+        viewModelScope.launch(ioDispatcher) {
+            _authBusy.value = true
+            _authErrorRes.value = null
+            _authInfoRes.value = null
+            authService.signInWithEmail(email, password)
+                .onFailure { err -> _authErrorRes.value = FirebaseErrorMapper.toFriendlyMessageRes(err) }
+            _authBusy.value = false
+        }
+    }
+
+    fun signUpWithEmail(
+        email: String,
+        password: String,
+        displayName: String,
+        username: String,
+        avatarPreset: String
+    ) {
+        viewModelScope.launch(ioDispatcher) {
+            _authBusy.value = true
+            _authErrorRes.value = null
+            _authInfoRes.value = null
+            authService.signUpWithEmail(email, password, displayName, username, avatarPreset)
+                .onFailure { err -> _authErrorRes.value = FirebaseErrorMapper.toFriendlyMessageRes(err) }
+            _authBusy.value = false
+        }
+    }
+
+    fun signInWithGoogleIdToken(idToken: String) {
+        viewModelScope.launch(ioDispatcher) {
+            _authBusy.value = true
+            _authErrorRes.value = null
+            _authInfoRes.value = null
+            authService.signInWithGoogleIdToken(idToken)
+                .onFailure { err -> _authErrorRes.value = FirebaseErrorMapper.toFriendlyMessageRes(err) }
+            _authBusy.value = false
+        }
+    }
+
+    fun completeProfileSetup(
+        displayName: String,
+        username: String,
+        avatarPreset: String
+    ) {
+        viewModelScope.launch(ioDispatcher) {
+            _authBusy.value = true
+            _authErrorRes.value = null
+            _authInfoRes.value = null
+            authService.completeProfileSetup(displayName, username, avatarPreset)
+                .onSuccess { _authInfoRes.value = com.tabletnotes.app.R.string.auth_profile_saved_notice }
+                .onFailure { err -> _authErrorRes.value = FirebaseErrorMapper.toFriendlyMessageRes(err) }
+            _authBusy.value = false
+        }
+    }
+
+    fun updateAccountProfile(
+        displayName: String,
+        username: String,
+        avatarPreset: String
+    ) {
+        viewModelScope.launch(ioDispatcher) {
+            _authBusy.value = true
+            _authErrorRes.value = null
+            _authInfoRes.value = null
+            authService.updateProfile(displayName, username, avatarPreset)
+                .onSuccess { _authInfoRes.value = com.tabletnotes.app.R.string.auth_profile_saved_notice }
+                .onFailure { err -> _authErrorRes.value = FirebaseErrorMapper.toFriendlyMessageRes(err) }
+            _authBusy.value = false
+        }
+    }
+
+    fun sendPasswordReset(email: String) {
+        if (email.isBlank()) {
+            _authErrorRes.value = com.tabletnotes.app.R.string.auth_error_invalid_email
+            return
+        }
+        viewModelScope.launch(ioDispatcher) {
+            _authBusy.value = true
+            _authErrorRes.value = null
+            _authInfoRes.value = null
+            authService.sendPasswordReset(email)
+                .onSuccess { _authInfoRes.value = com.tabletnotes.app.R.string.auth_password_reset_sent }
+                .onFailure { err -> _authErrorRes.value = FirebaseErrorMapper.toFriendlyMessageRes(err) }
+            _authBusy.value = false
+        }
+    }
+
+    fun signOutAccount() {
+        viewModelScope.launch(ioDispatcher) {
+            authService.signOut()
+            _authErrorRes.value = null
+            _authInfoRes.value = null
         }
     }
 
