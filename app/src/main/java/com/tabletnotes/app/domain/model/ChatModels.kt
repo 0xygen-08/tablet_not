@@ -32,6 +32,109 @@ object UsernameValidator {
         REGEX.matches(username)
 }
 
+object ChatIdUtils {
+    fun sortedPair(uid1: String, uid2: String): Pair<String, String> =
+        if (uid1 <= uid2) uid1 to uid2 else uid2 to uid1
+
+    fun pairIdFor(uid1: String, uid2: String): String {
+        val (a, b) = sortedPair(uid1, uid2)
+        return "${a}_${b}"
+    }
+
+    fun blockIdFor(blockerUid: String, blockedUid: String): String =
+        "${blockerUid}_${blockedUid}"
+}
+
+enum class FriendshipStatus {
+    PENDING,
+    ACCEPTED
+}
+
+data class FriendshipRecord(
+    val pairId: String,
+    val otherProfile: PublicUserProfile,
+    val status: FriendshipStatus,
+    val requesterId: String,
+    val receiverId: String,
+    val isIncoming: Boolean,
+    val updatedAtMillis: Long = 0L
+)
+
+data class BlockedUserRecord(
+    val blockId: String,
+    val blockedProfile: PublicUserProfile,
+    val createdAtMillis: Long = 0L
+)
+
+enum class MessageDeliveryStatus {
+    SENDING,
+    SENT,
+    FAILED
+}
+
+data class FirestoreChatMessage(
+    val id: String,
+    val senderId: String,
+    val senderName: String,
+    val text: String,
+    val createdAtMillis: Long,
+    val deliveryStatus: MessageDeliveryStatus = MessageDeliveryStatus.SENT
+)
+
+data class DirectChatSummary(
+    val chatId: String,
+    val peerProfile: PublicUserProfile,
+    val lastMessageText: String = "",
+    val lastMessageSenderId: String? = null,
+    val lastMessageAtMillis: Long = 0L,
+    val unreadCount: Int = 0
+)
+
+enum class GroupRole(val wireName: String) {
+    OWNER("owner"),
+    ADMIN("admin"),
+    MEMBER("member");
+
+    companion object {
+        fun fromWire(value: String?): GroupRole =
+            entries.firstOrNull { it.wireName == value } ?: MEMBER
+    }
+}
+
+enum class GroupSendPermission(val wireName: String) {
+    EVERYONE("everyone"),
+    ADMINS_ONLY("admins_only");
+
+    companion object {
+        fun fromWire(value: String?): GroupSendPermission =
+            entries.firstOrNull { it.wireName == value } ?: EVERYONE
+    }
+}
+
+data class GroupChatSummary(
+    val groupId: String,
+    val name: String,
+    val description: String = "",
+    val avatarPreset: String = AvatarPreset.PURPLE_PRESET_ID,
+    val ownerId: String = "",
+    val memberIds: List<String> = emptyList(),
+    val roles: Map<String, GroupRole> = emptyMap(),
+    val memberProfiles: Map<String, PublicUserProfile> = emptyMap(),
+    val whoCanSend: GroupSendPermission = GroupSendPermission.EVERYONE,
+    val lastMessageText: String = "",
+    val lastMessageSenderId: String? = null,
+    val lastMessageSenderName: String? = null,
+    val lastMessageAtMillis: Long = 0L,
+    val lastReadAtMillis: Long = 0L,
+    val isMutedLocally: Boolean = false
+) {
+    val hasUnread: Boolean
+        get() = lastMessageAtMillis > lastReadAtMillis && !lastMessageText.isNullOrBlank()
+}
+
+private val AvatarPreset.Companion.PURPLE_PRESET_ID: String
+    get() = AvatarPreset.PURPLE_INITIALS.id
+
 /**
  * Herkese açık kullanıcı profili (`users/{uid}`).
  * Gizlilik kuralı: E-posta adresi veya telefon numarası kesinlikle burada tutulmaz.
