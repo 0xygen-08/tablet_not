@@ -133,6 +133,7 @@ fun AccountSheetDialog(
     onUpdateProfile: (displayName: String, username: String, avatarPreset: String) -> Unit,
     onSendPasswordReset: (String) -> Unit,
     onSignOut: () -> Unit,
+    onDeleteAccount: (password: String) -> Unit = {},
     onClearFeedback: () -> Unit
 ) {
     val palette = TabletNotesTheme.palette
@@ -353,6 +354,75 @@ fun AccountSheetDialog(
                                 text = stringResource(R.string.auth_btn_sign_out),
                                 color = palette.secondaryAccent
                             )
+                        }
+
+                        var showDeleteConfirm by rememberSaveable { mutableStateOf(false) }
+                        var deleteConfirmPassword by rememberSaveable { mutableStateOf("") }
+
+                        if (!showDeleteConfirm) {
+                            TextButton(
+                                onClick = { showDeleteConfirm = true },
+                                enabled = !isBusy,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.auth_delete_account_btn),
+                                    color = palette.secondaryAccent,
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                            }
+                        } else {
+                            Surface(
+                                color = palette.secondaryAccent.copy(alpha = 0.12f),
+                                shape = RoundedCornerShape(16.dp),
+                                border = BorderStroke(1.dp, palette.secondaryAccent),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.auth_delete_account_title),
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = palette.secondaryAccent
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.auth_delete_account_desc),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = palette.textPrimary
+                                    )
+                                    if (!authState.authEmail.isNullOrBlank()) {
+                                        OutlinedTextField(
+                                            value = deleteConfirmPassword,
+                                            onValueChange = { deleteConfirmPassword = it },
+                                            label = { Text(stringResource(R.string.auth_delete_password_confirm_label)) },
+                                            visualTransformation = PasswordVisualTransformation(),
+                                            singleLine = true,
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Button(
+                                            onClick = { onDeleteAccount(deleteConfirmPassword) },
+                                            enabled = !isBusy,
+                                            colors = ButtonDefaults.buttonColors(containerColor = palette.secondaryAccent),
+                                            shape = CircleShape
+                                        ) {
+                                            Text(stringResource(R.string.auth_delete_confirm_cta))
+                                        }
+                                        TextButton(
+                                            onClick = {
+                                                showDeleteConfirm = false
+                                                deleteConfirmPassword = ""
+                                            },
+                                            enabled = !isBusy
+                                        ) {
+                                            Text(stringResource(R.string.editor_text_dialog_cancel))
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

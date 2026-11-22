@@ -340,6 +340,11 @@ fun TabletNotesShell(
                 chatViewModel.signOutAccount()
                 showProfileDialog = false
             },
+            onDeleteAccount = { password ->
+                chatViewModel.deleteAccountWithPassword(password) {
+                    showProfileDialog = false
+                }
+            },
             onClearFeedback = { chatViewModel.clearAuthFeedback() }
         )
     }
@@ -416,9 +421,6 @@ fun TabletNotesShell(
 
     // 4. Not Paylaşma Diyaloğu (24dp Dikdörtgen — Yazıların Tümü Eksiksiz Görünür)
     if (showShareFromEditorDialog) {
-        val activeNoteId = workspaceViewModel.editorController.noteId
-        val activeSummary = noteSummaries.firstOrNull { it.id == activeNoteId }
-
         AlertDialog(
             onDismissRequest = { showShareFromEditorDialog = false },
             shape = RoundedCornerShape(24.dp),
