@@ -2,8 +2,6 @@ package com.tabletnotes.app.feature.chat.relay
 
 import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.storage.FirebaseStorage
-import com.google.firebase.storage.StorageMetadata
 import java.io.File
 import java.io.IOException
 import java.util.UUID
@@ -154,35 +152,8 @@ class HybridFirebaseRelayStorage(
             }
         }
 
-        if (isFirebaseConfigured()) {
-            runCatching {
-                val storageRef = FirebaseStorage.getInstance()
-                    .reference
-                    .child("relay_notes/$recipientId/$objectId.enc")
-                val metadata = StorageMetadata.Builder()
-                    .setContentType("application/octet-stream")
-                    .setCustomMetadata("senderId", senderId)
-                    .setCustomMetadata("recipientId", recipientId)
-                    .setCustomMetadata("expiresAtMillis", expiresAt.toString())
-                    .build()
-                storageRef.putBytes(cipherBytes, metadata).await()
-
-                val docData = mapOf(
-                    "relayObjectId" to objectId,
-                    "senderId" to senderId,
-                    "recipientId" to recipientId,
-                    "encryptedKeyEnvelopeBase64" to encryptedKeyEnvelopeBase64,
-                    "encryptedSizeBytes" to cipherBytes.size.toLong(),
-                    "createdAtMillis" to now,
-                    "expiresAtMillis" to expiresAt
-                )
-                FirebaseFirestore.getInstance()
-                    .collection("relay_waiting_room")
-                    .document(objectId)
-                    .set(docData)
-                    .await()
-            }
-        }
+        // Not: Spark planında Cloud Storage yasak olduğu için Faz 1/2 yerel bekleme odası simülasyonu korunur.
+        // Sunucu üzerinden şifreli dosya aktarımı Faz 3 kapsamındadır.
 
         // Yerel bekleme odası kopyası (veya Firebase yokken birincil Relay deposu)
         val cipherFile = File(localRelayDir, "$objectId.enc")
@@ -252,21 +223,6 @@ class HybridFirebaseRelayStorage(
         val entry = localWaitingRoom[relayObjectId] ?: return false
         if (entry.recipientId != requestingUserId && entry.senderId != requestingUserId) {
             throw SecurityException("Yetkisiz silme isteği.")
-        }
-
-        if (isFirebaseConfigured()) {
-            runCatching {
-                FirebaseStorage.getInstance()
-                    .reference
-                    .child("relay_notes/${entry.recipientId}/$relayObjectId.enc")
-                    .delete()
-                    .await()
-                FirebaseFirestore.getInstance()
-                    .collection("relay_waiting_room")
-                    .document(relayObjectId)
-                    .delete()
-                    .await()
-            }
         }
 
         val deleted = entry.cipherFile.delete()

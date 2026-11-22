@@ -6,6 +6,10 @@ plugins {
     alias(libs.plugins.hilt.android)
 }
 
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 android {
     namespace = "com.tabletnotes.app"
     compileSdk = 35
@@ -33,7 +37,6 @@ android {
         }
         debug {
             isMinifyEnabled = false
-            applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
         }
     }
@@ -100,15 +103,17 @@ dependencies {
     implementation(libs.androidx.graphics.core)
     implementation(libs.androidx.input.motionprediction)
 
-    // Uçtan Uca Şifreleme (Google Tink) & Çevrimdışı Paylaşım (Nearby Connections)
+    // Uçtan Uca Şifreleme (Faz 1), Çevrimdışı Paylaşım (Nearby), Google Giriş & QR
     implementation(libs.google.tink.android)
     implementation(libs.play.services.nearby)
+    implementation(libs.play.services.auth)
+    implementation(libs.play.services.code.scanner)
+    implementation(libs.zxing.core)
 
-    // Firebase (RelayStorage arayüzü arkasında M5'te kullanılacak)
+    // Firebase Spark Planı (Yalnızca Authentication ve Cloud Firestore; Storage/Functions yok)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth)
     implementation(libs.firebase.firestore)
-    implementation(libs.firebase.storage)
 
     // Test ve Hata Ayıklama
     testImplementation(libs.junit)

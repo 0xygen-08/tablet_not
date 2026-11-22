@@ -1,0 +1,25 @@
+{
+  "project_info": {
+    "project_number": "000000000000",
+    "project_id": "BURAYA-KENDI-FIREBASE-PROJE-ID-NIZ",
+    "storage_bucket": "not-used-in-spark-phase2"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
+        "android_client_info": {
+          "package_name": "com.tabletnotes.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "BURAYA-GERCEK-GOOGLE-SERVICES-JSON-KONULACAK"
+        }
+      ]
+    }
+  ],
+  "configuration_version": "1"
+}
+

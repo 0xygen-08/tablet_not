@@ -442,7 +442,7 @@ Sunucu kodu olmadan tam güvenlik şu kurallarla sağlanır:
 ## 12. Faz 2 Kilometre Taşı Planı (M1 – M7)
 
 Her adım tek tek uygulanıp sizin onayınızla bir sonrakine geçilecektir:
-- **M1 — Firebase Kurulumu:** Size Firebase Console'da atacağınız adım adım talimatları vereceğim; siz `google-services.json` dosyasını indirip koyduktan sonra uygulamayı Firebase Auth + Firestore offline persistence ile bağlayacağım.
+- **M1 — Firebase Kurulumu:** *(Altyapı kodları ve `firestore.rules` hazır; `google-services.json` eklendikten sonra tam aktif olacak)* — Firebase Console adımları paylaşıldı, `cloud_storage` bağımlılığı kaldırıldı, `FirebaseAuth` + çevrimdışı önbellekli `Cloud Firestore` (`FirebaseProvider`) ve QR/Google Giriş kütüphaneleri bağlandı.
 - **M2 — Kimlik Doğrulama, Profil ve Benzersiz `@kullanici_adi`:** E-posta+Şifre kayıt/giriş, Google ile Giriş, Şifre Sıfırlama, atomik `usernames/{name}` + `users/{uid}` batch kaydı, yerleşik avatar seçimi, profil düzenleme, çıkış yapıldığında Faz 1'in çalışmaya devam etmesi.
 - **M3 — Arkadaşlar (Tam Arama, QR, İstekler, Engelleme, Şikayet):** Tam `@kullanici_adi` arama, ZXing + Play Services Code Scanner ile QR göster/oku, istek gönder/kabul/red/iptal/arkadaşlıktan çıkar, engelle/engeli kaldır, yalnızca oluşturulabilir `reports`.
 - **M4 — Doğrudan 1:1 Sohbet (Yalnızca Metin) ve Okunmamış Sayacı:** Gerçek zamanlı mesajlaşma (`limit(30)`), gönderiliyor/gönderildi/hata+yeniden dene durumları, tarih ayırıcıları, kendi mesajını silme, max 2000 karakter, "Not Ekle" için "Yakında" mesajı, `unreadCount` + arama filtresi.

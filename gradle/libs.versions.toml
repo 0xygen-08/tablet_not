@@ -18,12 +18,16 @@ androidxInk = "1.0.0-alpha03"
 graphicsCore = "1.0.2"
 motionPrediction = "1.0.0-beta01"
 
-# Şifreleme (E2EE) ve Çevrimdışı Yakın Paylaşım (Nearby)
+# Şifreleme (E2EE), Yakın Paylaşım (Nearby), Google Giriş ve QR Tarama
 tink = "1.15.0"
 playServicesNearby = "19.3.0"
+playServicesAuth = "21.3.0"
+playServicesCodeScanner = "16.1.0"
+zxingCore = "3.5.3"
 
-# Firebase (M5'te aktif edilecek, RelayStorage arayüzü arkasında)
+# Firebase Spark (Auth + Firestore)
 firebaseBom = "33.7.0"
+googleServices = "4.4.2"
 
 # Test Kütüphaneleri
 junit = "4.13.2"
@@ -72,15 +76,17 @@ androidx-ink-storage = { group = "androidx.ink", name = "ink-storage", version.r
 androidx-graphics-core = { group = "androidx.graphics", name = "graphics-core", version.ref = "graphicsCore" }
 androidx-input-motionprediction = { group = "androidx.input", name = "input-motionprediction", version.ref = "motionPrediction" }
 
-# Şifreleme & Nearby Connections
+# Şifreleme, Nearby, Google Auth & QR Kod
 google-tink-android = { group = "com.google.crypto.tink", name = "tink-android", version.ref = "tink" }
 play-services-nearby = { group = "com.google.android.gms", name = "play-services-nearby", version.ref = "playServicesNearby" }
+play-services-auth = { group = "com.google.android.gms", name = "play-services-auth", version.ref = "playServicesAuth" }
+play-services-code-scanner = { group = "com.google.android.gms", name = "play-services-code-scanner", version.ref = "playServicesCodeScanner" }
+zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxingCore" }
 
-# Firebase (BOM ile sürüm yönetimi)
+# Firebase Spark (BOM ile sürüm yönetimi — Cloud Storage ve Functions kullanılmaz)
 firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
 firebase-auth = { group = "com.google.firebase", name = "firebase-auth" }
 firebase-firestore = { group = "com.google.firebase", name = "firebase-firestore" }
-firebase-storage = { group = "com.google.firebase", name = "firebase-storage" }
 
 # Test
 junit = { group = "junit", name = "junit", version.ref = "junit" }
@@ -94,4 +100,5 @@ kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 hilt-android = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
+google-services = { id = "com.google.gms.google-services", version.ref = "googleServices" }
 
