@@ -147,7 +147,9 @@ service cloud.firestore {
 
       match /messages/{messageId} {
         function chatDoc() {
-          return get(/databases/$(database)/documents/direct_chats/$(chatId)).data;
+          return exists(/databases/$(database)/documents/direct_chats/$(chatId))
+            ? get(/databases/$(database)/documents/direct_chats/$(chatId)).data
+            : getAfter(/databases/$(database)/documents/direct_chats/$(chatId)).data;
         }
 
         allow read: if isSignedIn() && request.auth.uid in chatDoc().participants;
@@ -199,8 +201,7 @@ service cloud.firestore {
         (
           // 1) Grup sahibi (Owner): rol değiştirme, bilgi/ayar düzenleme ve son mesaj güncelleme
           isGroupOwner() ||
-          // 2) Yönetici (Admin): owner'a dokunmadan üye ekleme/çıkarma ve grup bilgisi/ayarları düzenleme
-          // (Adminler diğer adminleri atayamaz veya çıkaramaz; bu hak yalnızca owner'ındır)
+          // 2) Yönetici (Admin): owner'a veya diğer adminlere dokunmadan normal üye ekleme/çıkarma ve grup bilgisi/ayarları düzenleme
           (
             isGroupAdmin() &&
             !isGroupOwner() &&
@@ -214,13 +215,18 @@ service cloud.firestore {
               'lastMessageText', 'lastMessageSenderId', 'lastMessageSenderName',
               'lastMessageAt', 'lastReadAt', 'updatedAt'
             ]) &&
+            request.resource.data.whoCanSend in ['everyone', 'admins_only'] &&
+            request.resource.data.roles.diff(resource.data.roles).addedKeys().size() == 0 &&
             request.resource.data.roles.diff(resource.data.roles).changedKeys().size() == 0 &&
-            request.resource.data.roles.diff(resource.data.roles).addedKeys().size() <= 50 &&
             (
-              // Eklenen yeni üyelerin rolü yalnızca 'member' olabilir
-              request.resource.data.roles.diff(resource.data.roles).addedKeys().size() == 0 ||
-              !('owner' in request.resource.data.roles.values()) ||
-              request.resource.data.roles.keys().removeAll(resource.data.roles.keys()).size() > 0
+              resource.data.memberIds.removeAll(request.resource.data.memberIds).size() == 0 ||
+              (
+                resource.data.memberIds.removeAll(request.resource.data.memberIds).size() == 1 &&
+                (
+                  !(resource.data.memberIds.removeAll(request.resource.data.memberIds)[0] in resource.data.roles.keys()) ||
+                  resource.data.roles[resource.data.memberIds.removeAll(request.resource.data.memberIds)[0]] == 'member'
+                )
+              )
             )
           ) ||
           // 3) Normal Üye veya Admin: Sadece sohbet önizlemesi/okundu güncelleme VEYA gruptan ayrılma

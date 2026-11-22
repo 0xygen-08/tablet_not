@@ -569,7 +569,6 @@ class FirestoreMessagingRepository @Inject constructor(
             "updatedAt" to FieldValue.serverTimestamp()
         )
         toAdd.forEach { member ->
-            updates["roles.${member.uid}"] = GroupRole.MEMBER.wireName
             updates["memberProfiles.${member.uid}"] = mapOf(
                 "uid" to member.uid,
                 "username" to member.username,
