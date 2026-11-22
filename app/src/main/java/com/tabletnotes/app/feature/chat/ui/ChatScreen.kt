@@ -1,11 +1,11 @@
 package com.tabletnotes.app.feature.chat.ui
 
-import android.graphics.BitmapFactory
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,49 +16,50 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.AttachFile
-import androidx.compose.material.icons.filled.CloudDone
-import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.CloudOff
-import androidx.compose.material.icons.filled.CloudUpload
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.NotificationsOff
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.PersonRemove
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SupervisedUserCircle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -69,31 +70,35 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tabletnotes.app.R
-import com.tabletnotes.app.core.designsystem.theme.CourseFolderPalette
 import com.tabletnotes.app.core.designsystem.theme.TabletNotesTheme
-import com.tabletnotes.app.domain.model.ChatContact
-import com.tabletnotes.app.domain.model.ChatMessage
-import com.tabletnotes.app.domain.model.ChatMessageType
-import com.tabletnotes.app.domain.model.RelayTransferState
-import com.tabletnotes.app.domain.repository.NoteSummary
-import com.tabletnotes.app.feature.editor.ui.formatFileSize
-import java.io.File
+import com.tabletnotes.app.domain.model.AccountAuthState
+import com.tabletnotes.app.domain.model.DirectChatSummary
+import com.tabletnotes.app.domain.model.FirestoreChatMessage
+import com.tabletnotes.app.domain.model.GroupChatSummary
+import com.tabletnotes.app.domain.model.GroupRole
+import com.tabletnotes.app.domain.model.GroupSendPermission
+import com.tabletnotes.app.domain.model.MessageDeliveryStatus
+import com.tabletnotes.app.domain.model.PublicUserProfile
+import com.tabletnotes.app.feature.chat.auth.UserAvatarBadge
+import com.tabletnotes.app.feature.chat.friends.AddFriendAndQrDialog
+import com.tabletnotes.app.feature.chat.friends.FriendRequestsAndBlocksDialog
+import com.tabletnotes.app.feature.chat.friends.ReportDialog
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
 @Composable
 fun ChatScreen(
     viewModel: ChatViewModel,
-    onOpenNoteInEditor: (String) -> Unit,
+    onOpenNearbyShare: () -> Unit,
     showGroupsOnly: Boolean = false,
     modifier: Modifier = Modifier
 ) {
@@ -101,35 +106,100 @@ fun ChatScreen(
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.screenWidthDp > configuration.screenHeightDp
 
+    val accountAuthState by viewModel.accountAuthState.collectAsState()
+    val signedInProfile = (accountAuthState as? AccountAuthState.SignedIn)?.profile ?: return
+
+    // Kota kuralı: yalnızca ChatScreen ekrandayken SnapshotListener bağlanır, çıkınca sökülür
+    DisposableEffect(Unit) {
+        viewModel.setChatSectionVisible(true)
+        onDispose {
+            viewModel.setChatSectionVisible(false)
+        }
+    }
+
     val isOnline by viewModel.isOnline.collectAsState()
-    val allContacts by viewModel.contacts.collectAsState()
-    val selectedContactId by viewModel.selectedContactId.collectAsState()
-    val messages by viewModel.messages.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
-    val availableNotes by viewModel.availableNotes.collectAsState()
-    val bannerMessage by viewModel.bannerMessage.collectAsState()
+    val directItems by viewModel.directChatItems.collectAsState()
+    val groupItems by viewModel.groupChatItems.collectAsState()
+    val activeTarget by viewModel.activeTarget.collectAsState()
+    val activeMessages by viewModel.activeMessages.collectAsState()
+    val hasMoreOlder by viewModel.hasMoreOlderMessages.collectAsState()
+    val isLoadingOlder by viewModel.isLoadingOlderMessages.collectAsState()
+    val chatNoticeRes by viewModel.chatNoticeRes.collectAsState()
 
-    val filteredContacts = remember(allContacts, showGroupsOnly) {
-        allContacts.filter { it.isGroup == showGroupsOnly }
+    val friendships by viewModel.friendships.collectAsState()
+    val incomingRequests by viewModel.incomingFriendRequests.collectAsState()
+    val outgoingRequests by viewModel.outgoingFriendRequests.collectAsState()
+    val blockedUsers by viewModel.blockedUsers.collectAsState()
+    val friendSearchResult by viewModel.friendSearchResult.collectAsState()
+    val friendBusy by viewModel.friendBusy.collectAsState()
+    val friendErrorRes by viewModel.friendErrorRes.collectAsState()
+    val friendInfoRes by viewModel.friendInfoRes.collectAsState()
+
+    var showFabMenu by remember { mutableStateOf(false) }
+    var showAddFriendDialog by rememberSaveable { mutableStateOf(false) }
+    var showRequestsDialog by rememberSaveable { mutableStateOf(false) }
+    var showAttachComingSoonDialog by rememberSaveable { mutableStateOf(false) }
+    var showCreateGroupComingSoonNotice by rememberSaveable { mutableStateOf(false) }
+    var pendingReport by remember { mutableStateOf<ReportRequest?>(null) }
+    var composerText by rememberSaveable(activeTarget) { mutableStateOf("") }
+
+    // Sekme (Arkadaşlar <-> Gruplar) değiştiğinde uyumsuz hedefi temizle
+    LaunchedEffect(showGroupsOnly) {
+        val current = activeTarget
+        if (showGroupsOnly && current is ActiveConversationTarget.Direct) {
+            viewModel.closeActiveConversation()
+        } else if (!showGroupsOnly && current is ActiveConversationTarget.Group) {
+            viewModel.closeActiveConversation()
+        }
     }
 
-    var portraitShowConversation by rememberSaveable(showGroupsOnly) { mutableStateOf(false) }
-    var composerText by rememberSaveable { mutableStateOf("") }
-    var showNotePickerDialog by rememberSaveable { mutableStateOf(false) }
-    var showAddContactDialog by rememberSaveable { mutableStateOf(false) }
-
-    val selectedContact = filteredContacts.firstOrNull { it.id == selectedContactId }
-        ?: filteredContacts.firstOrNull()
-
-    BackHandler(enabled = !isLandscape && portraitShowConversation) {
-        portraitShowConversation = false
+    val isDetailOpenForCurrentTab = when {
+        showGroupsOnly && activeTarget is ActiveConversationTarget.Group -> true
+        !showGroupsOnly && activeTarget is ActiveConversationTarget.Direct -> true
+        else -> false
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
+    BackHandler(enabled = !isLandscape && isDetailOpenForCurrentTab) {
+        viewModel.closeActiveConversation()
+    }
+
+    Column(
+        modifier = modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        // Çevrimdışı Önbellek Uyarısı
+        if (!isOnline) {
+            Surface(
+                color = palette.secondaryAccent.copy(alpha = 0.14f),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, palette.secondaryAccent),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CloudOff,
+                        contentDescription = null,
+                        tint = palette.secondaryAccent,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = stringResource(R.string.chat_offline_banner),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = palette.textPrimary
+                    )
+                }
+            }
+        }
+
         if (isLandscape) {
-            // YATAY (LANDSCAPE) TABLET MODU: Sol Kişi/Grup Listesi + Sağ Aktif Sohbet Paneli
+            // TABLET YATAY (LANDSCAPE): Sol Liste (340dp) + Sağ Sohbet Paneli
             Row(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.weight(1f),
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Box(
@@ -137,15 +207,30 @@ fun ChatScreen(
                         .width(340.dp)
                         .fillMaxHeight()
                 ) {
-                    ContactsListPane(
-                        contacts = filteredContacts,
-                        selectedContactId = selectedContact?.id,
+                    ConversationsListPane(
+                        showGroupsOnly = showGroupsOnly,
+                        directItems = directItems,
+                        groupItems = groupItems,
+                        incomingRequestsCount = incomingRequests.size,
+                        selectedId = when (val t = activeTarget) {
+                            is ActiveConversationTarget.Direct -> t.chatId
+                            is ActiveConversationTarget.Group -> t.groupId
+                            null -> null
+                        },
                         searchQuery = searchQuery,
                         onSearchQueryChange = { viewModel.updateSearchQuery(it) },
-                        onSelectContact = { contact ->
-                            viewModel.selectContact(contact.id)
+                        onSelectDirect = { summary -> viewModel.openDirectConversation(summary.peerProfile) },
+                        onSelectGroup = { grp -> viewModel.openGroupConversation(grp.groupId) },
+                        onOpenRequests = { showRequestsDialog = true },
+                        showFabMenu = showFabMenu,
+                        onToggleFabMenu = { showFabMenu = it },
+                        onOpenAddFriend = {
+                            viewModel.clearFriendFeedback()
+                            showAddFriendDialog = true
                         },
-                        onAddClick = { showAddContactDialog = true }
+                        onOpenCreateGroup = {
+                            showCreateGroupComingSoonNotice = true
+                        }
                     )
                 }
 
@@ -157,145 +242,235 @@ fun ChatScreen(
                         .weight(1f)
                         .fillMaxHeight()
                 ) {
-                    if (selectedContact == null) {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text(
-                                text = stringResource(R.string.chat_section_subtitle),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = palette.textMuted
-                            )
-                        }
-                    } else {
-                        ConversationDetailPane(
-                            contact = selectedContact,
-                            messages = messages,
-                            isOnline = isOnline,
-                            bannerMessage = bannerMessage,
-                            composerText = composerText,
-                            onComposerTextChange = { composerText = it },
-                            onSendText = {
-                                viewModel.sendTextMessage(composerText)
-                                composerText = ""
-                            },
-                            onOpenNotePicker = { showNotePickerDialog = true },
-                            onDismissBanner = { viewModel.dismissBanner() },
-                            onToggleOffline = { viewModel.toggleSimulatedOffline() },
-                            onSimulateIncomingNote = { viewModel.simulateIncomingEncryptedNote() },
-                            onDownloadAndDecrypt = { msg ->
-                                viewModel.downloadAndDecryptNoteMessage(msg)
-                            },
-                            onRetryUpload = { msgId -> viewModel.resumeOrRetryNoteUpload(msgId) },
-                            onOpenNoteInEditor = onOpenNoteInEditor,
-                            showBackButton = false,
-                            onBackClick = {}
-                        )
-                    }
+                    ActiveConversationContainer(
+                        myProfile = signedInProfile,
+                        activeTarget = activeTarget,
+                        groupItems = groupItems,
+                        messages = activeMessages,
+                        hasMoreOlder = hasMoreOlder,
+                        isLoadingOlder = isLoadingOlder,
+                        noticeRes = chatNoticeRes,
+                        composerText = composerText,
+                        onComposerTextChange = { composerText = it.take(2000) },
+                        onSend = {
+                            viewModel.sendMessage(composerText)
+                            composerText = ""
+                        },
+                        onLoadOlder = { viewModel.loadOlderMessages() },
+                        onRetryFailed = { viewModel.retryFailedMessage(it) },
+                        onDeleteOwnMessage = { viewModel.deleteOwnMessage(it) },
+                        onReportUserOrMessage = { pendingReport = it },
+                        onUnfriend = { peerUid -> viewModel.rejectCancelOrUnfriend(peerUid) },
+                        onBlockUser = { peer -> viewModel.blockUser(peer) },
+                        onAttachNoteClick = { showAttachComingSoonDialog = true },
+                        onOpenGroupSettings = {},
+                        onToggleGroupMute = { gid -> viewModel.toggleGroupMute(gid) },
+                        onDismissNotice = { viewModel.dismissChatNotice() },
+                        showBackButton = false,
+                        onBackClick = {}
+                    )
                 }
             }
         } else {
-            // DİKEY (PORTRAIT) TABLET MODU: Taslak 2. Ekran Görünümü -> Tıklanınca Sohbet Detayı
-            if (!portraitShowConversation || selectedContact == null) {
-                ContactsListPane(
-                    contacts = filteredContacts,
-                    selectedContactId = null,
-                    searchQuery = searchQuery,
-                    onSearchQueryChange = { viewModel.updateSearchQuery(it) },
-                    onSelectContact = { contact ->
-                        viewModel.selectContact(contact.id)
-                        portraitShowConversation = true
-                    },
-                    onAddClick = { showAddContactDialog = true }
-                )
+            // DİKEY (PORTRAIT) / TELEFON: Tek Panel (Liste <-> Sohbet)
+            if (!isDetailOpenForCurrentTab) {
+                Box(modifier = Modifier.weight(1f)) {
+                    ConversationsListPane(
+                        showGroupsOnly = showGroupsOnly,
+                        directItems = directItems,
+                        groupItems = groupItems,
+                        incomingRequestsCount = incomingRequests.size,
+                        selectedId = null,
+                        searchQuery = searchQuery,
+                        onSearchQueryChange = { viewModel.updateSearchQuery(it) },
+                        onSelectDirect = { summary -> viewModel.openDirectConversation(summary.peerProfile) },
+                        onSelectGroup = { grp -> viewModel.openGroupConversation(grp.groupId) },
+                        onOpenRequests = { showRequestsDialog = true },
+                        showFabMenu = showFabMenu,
+                        onToggleFabMenu = { showFabMenu = it },
+                        onOpenAddFriend = {
+                            viewModel.clearFriendFeedback()
+                            showAddFriendDialog = true
+                        },
+                        onOpenCreateGroup = {
+                            showCreateGroupComingSoonNotice = true
+                        }
+                    )
+                }
             } else {
                 Surface(
                     color = palette.surfaceElevated,
                     shape = RoundedCornerShape(palette.cardCornerRadius),
                     border = BorderStroke(1.dp, palette.borderSubtle),
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.weight(1f)
                 ) {
-                    ConversationDetailPane(
-                        contact = selectedContact,
-                        messages = messages,
-                        isOnline = isOnline,
-                        bannerMessage = bannerMessage,
+                    ActiveConversationContainer(
+                        myProfile = signedInProfile,
+                        activeTarget = activeTarget,
+                        groupItems = groupItems,
+                        messages = activeMessages,
+                        hasMoreOlder = hasMoreOlder,
+                        isLoadingOlder = isLoadingOlder,
+                        noticeRes = chatNoticeRes,
                         composerText = composerText,
-                        onComposerTextChange = { composerText = it },
-                        onSendText = {
-                            viewModel.sendTextMessage(composerText)
+                        onComposerTextChange = { composerText = it.take(2000) },
+                        onSend = {
+                            viewModel.sendMessage(composerText)
                             composerText = ""
                         },
-                        onOpenNotePicker = { showNotePickerDialog = true },
-                        onDismissBanner = { viewModel.dismissBanner() },
-                        onToggleOffline = { viewModel.toggleSimulatedOffline() },
-                        onSimulateIncomingNote = { viewModel.simulateIncomingEncryptedNote() },
-                        onDownloadAndDecrypt = { msg ->
-                            viewModel.downloadAndDecryptNoteMessage(msg)
-                        },
-                        onRetryUpload = { msgId -> viewModel.resumeOrRetryNoteUpload(msgId) },
-                        onOpenNoteInEditor = onOpenNoteInEditor,
+                        onLoadOlder = { viewModel.loadOlderMessages() },
+                        onRetryFailed = { viewModel.retryFailedMessage(it) },
+                        onDeleteOwnMessage = { viewModel.deleteOwnMessage(it) },
+                        onReportUserOrMessage = { pendingReport = it },
+                        onUnfriend = { peerUid -> viewModel.rejectCancelOrUnfriend(peerUid) },
+                        onBlockUser = { peer -> viewModel.blockUser(peer) },
+                        onAttachNoteClick = { showAttachComingSoonDialog = true },
+                        onOpenGroupSettings = {},
+                        onToggleGroupMute = { gid -> viewModel.toggleGroupMute(gid) },
+                        onDismissNotice = { viewModel.dismissChatNotice() },
                         showBackButton = true,
-                        onBackClick = { portraitShowConversation = false }
+                        onBackClick = { viewModel.closeActiveConversation() }
                     )
                 }
             }
         }
     }
 
-    // Not Gönderme Seçici Diyaloğu
-    if (showNotePickerDialog) {
-        NoteAttachmentPickerDialog(
-            notes = availableNotes,
-            onDismiss = { showNotePickerDialog = false },
-            onSelectNote = { noteSummary ->
-                showNotePickerDialog = false
-                if (selectedContact != null) {
-                    viewModel.sendNoteAttachment(noteSummary, targetContactId = selectedContact.id)
+    // --- DİYALOGLAR (M3 + M4) ---
+
+    if (showAddFriendDialog) {
+        AddFriendAndQrDialog(
+            myProfile = signedInProfile,
+            searchResult = friendSearchResult,
+            existingFriendships = friendships,
+            blockedUsers = blockedUsers,
+            isBusy = friendBusy,
+            errorMessageRes = friendErrorRes,
+            infoMessageRes = friendInfoRes,
+            onSearchExactUsername = { viewModel.searchUserByExactUsername(it) },
+            onSendFriendRequest = { viewModel.sendFriendRequest(it) },
+            onAcceptRequest = { viewModel.acceptFriendRequest(it) },
+            onBlockUser = { viewModel.blockUser(it) },
+            onReportUser = { target ->
+                showAddFriendDialog = false
+                pendingReport = ReportRequest(
+                    targetType = "user",
+                    targetLabel = "${target.displayName} (@${target.username})",
+                    targetUserId = target.uid,
+                    targetChatId = null,
+                    targetMessageId = null
+                )
+            },
+            onQrScanError = { resId -> viewModel.setFriendErrorRes(resId) },
+            onClearState = { viewModel.clearFriendFeedback() },
+            onDismiss = { showAddFriendDialog = false }
+        )
+    }
+
+    if (showRequestsDialog) {
+        FriendRequestsAndBlocksDialog(
+            incomingRequests = incomingRequests,
+            outgoingRequests = outgoingRequests,
+            blockedUsers = blockedUsers,
+            isBusy = friendBusy,
+            onAcceptRequest = { viewModel.acceptFriendRequest(it) },
+            onRejectOrCancel = { viewModel.rejectCancelOrUnfriend(it) },
+            onUnblockUser = { viewModel.unblockUser(it) },
+            onDismiss = { showRequestsDialog = false }
+        )
+    }
+
+    val currentReport = pendingReport
+    if (currentReport != null) {
+        ReportDialog(
+            targetLabel = currentReport.targetLabel,
+            isBusy = friendBusy,
+            onSubmitReport = { reason ->
+                viewModel.submitReport(currentReport, reason)
+                pendingReport = null
+            },
+            onDismiss = { pendingReport = null }
+        )
+    }
+
+    if (showAttachComingSoonDialog) {
+        AlertDialog(
+            onDismissRequest = { showAttachComingSoonDialog = false },
+            shape = RoundedCornerShape(24.dp),
+            containerColor = palette.surfaceElevated,
+            title = {
+                Text(
+                    text = stringResource(R.string.chat_attach_coming_soon_title),
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                )
+            },
+            text = {
+                Text(
+                    text = stringResource(R.string.chat_attach_coming_soon_body),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = palette.textSecondary
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showAttachComingSoonDialog = false
+                        onOpenNearbyShare()
+                    },
+                    shape = CircleShape
+                ) {
+                    Text(stringResource(R.string.chat_attach_go_nearby))
                 }
             },
-            onSimulateOversize = {
-                showNotePickerDialog = false
-                val first = availableNotes.firstOrNull()
-                if (first != null && selectedContact != null) {
-                    viewModel.sendNoteAttachment(
-                        noteSummary = first,
-                        targetContactId = selectedContact.id,
-                        simulateOversizedFile = true
-                    )
+            dismissButton = {
+                TextButton(onClick = { showAttachComingSoonDialog = false }) {
+                    Text(stringResource(R.string.editor_json_debug_close))
                 }
             }
         )
     }
 
-    // Yeni Arkadaş / Grup Ekleme Diyaloğu
-    if (showAddContactDialog) {
-        AddContactOrGroupDialog(
-            isGroup = showGroupsOnly,
-            onDismiss = { showAddContactDialog = false },
-            onConfirm = { name, handle ->
-                viewModel.addOrFindContact(name, handle, isGroup = showGroupsOnly)
-                showAddContactDialog = false
+    if (showCreateGroupComingSoonNotice) {
+        AlertDialog(
+            onDismissRequest = { showCreateGroupComingSoonNotice = false },
+            shape = RoundedCornerShape(24.dp),
+            containerColor = palette.surfaceElevated,
+            title = { Text(stringResource(R.string.group_create_title)) },
+            text = { Text(stringResource(R.string.chat_empty_groups_list)) },
+            confirmButton = {
+                TextButton(onClick = { showCreateGroupComingSoonNotice = false }) {
+                    Text(stringResource(R.string.editor_json_debug_close))
+                }
             }
         )
     }
 }
 
 @Composable
-private fun ContactsListPane(
-    contacts: List<ChatContact>,
-    selectedContactId: String?,
+private fun ConversationsListPane(
+    showGroupsOnly: Boolean,
+    directItems: List<DirectChatSummary>,
+    groupItems: List<GroupChatSummary>,
+    incomingRequestsCount: Int,
+    selectedId: String?,
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
-    onSelectContact: (ChatContact) -> Unit,
-    onAddClick: () -> Unit
+    onSelectDirect: (DirectChatSummary) -> Unit,
+    onSelectGroup: (GroupChatSummary) -> Unit,
+    onOpenRequests: () -> Unit,
+    showFabMenu: Boolean,
+    onToggleFabMenu: (Boolean) -> Unit,
+    onOpenAddFriend: () -> Unit,
+    onOpenCreateGroup: () -> Unit
 ) {
     val palette = TabletNotesTheme.palette
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Taslak 2. Ekrandaki Kompakt Pill Arama Çubuğu ("Ara" sol tarafta, Büyüteç sağda — 42dp)
+            // Kompakt Pill Arama Çubuğu
             Surface(
                 shape = CircleShape,
                 color = palette.surfaceElevated,
@@ -337,41 +512,163 @@ private fun ContactsListPane(
                 }
             }
 
-            // Kişi / Grup Listesi (Taslak 2. Ekran Düzeni: Ahmet, Mehmet, Ali)
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(bottom = 76.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                itemsIndexed(contacts, key = { _, item -> item.id }) { index, contact ->
-                    val isSelected = contact.id == selectedContactId
-                    MockupContactRowItem(
-                        contact = contact,
-                        index = index,
-                        isSelected = isSelected,
-                        onClick = { onSelectContact(contact) }
-                    )
+            // Gelen Arkadaşlık İsteği Şeridi
+            if (!showGroupsOnly && incomingRequestsCount > 0) {
+                Surface(
+                    onClick = onOpenRequests,
+                    shape = RoundedCornerShape(14.dp),
+                    color = palette.primaryAccent.copy(alpha = 0.14f),
+                    border = BorderStroke(1.dp, palette.primaryAccent),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SupervisedUserCircle,
+                                contentDescription = null,
+                                tint = palette.primaryAccent,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = stringResource(R.string.chat_menu_requests_blocks_fmt, incomingRequestsCount),
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                                color = palette.textPrimary
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (!showGroupsOnly) {
+                if (directItems.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = stringResource(R.string.chat_empty_friends_list),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = palette.textMuted,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(bottom = 76.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        itemsIndexed(directItems, key = { _, item -> item.chatId }) { _, summary ->
+                            DirectChatRowItem(
+                                summary = summary,
+                                isSelected = summary.chatId == selectedId,
+                                onClick = { onSelectDirect(summary) }
+                            )
+                        }
+                    }
+                }
+            } else {
+                if (groupItems.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = stringResource(R.string.chat_empty_groups_list),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = palette.textMuted,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(bottom = 76.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        itemsIndexed(groupItems, key = { _, grp -> grp.groupId }) { _, group ->
+                            GroupChatRowItem(
+                                group = group,
+                                isSelected = group.groupId == selectedId,
+                                onClick = { onSelectGroup(group) }
+                            )
+                        }
+                    }
                 }
             }
         }
 
-        // Sağ Alt Köşe + Squircle FAB (Taslak 2. Ekran ile Birebir Uyumlu)
-        Surface(
-            onClick = onAddClick,
-            shape = RoundedCornerShape(palette.fabCornerRadius),
-            color = palette.primaryAccent,
-            shadowElevation = 4.dp,
+        // Sağ Alt "+" FAB + Küçük Menü
+        Box(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(bottom = 8.dp, end = 4.dp)
-                .size(54.dp)
         ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = stringResource(R.string.chat_add_contact_btn),
-                    tint = palette.onPrimaryAccent,
-                    modifier = Modifier.size(26.dp)
+            Surface(
+                onClick = { onToggleFabMenu(true) },
+                shape = RoundedCornerShape(palette.fabCornerRadius),
+                color = palette.primaryAccent,
+                shadowElevation = 4.dp,
+                modifier = Modifier.size(54.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = stringResource(R.string.chat_add_contact_btn),
+                        tint = palette.onPrimaryAccent,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+            }
+
+            DropdownMenu(
+                expanded = showFabMenu,
+                onDismissRequest = { onToggleFabMenu(false) }
+            ) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.chat_menu_add_friend_qr)) },
+                    leadingIcon = { Icon(Icons.Default.PersonAdd, contentDescription = null) },
+                    onClick = {
+                        onToggleFabMenu(false)
+                        onOpenAddFriend()
+                    }
+                )
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            if (incomingRequestsCount > 0) {
+                                stringResource(R.string.chat_menu_requests_blocks_fmt, incomingRequestsCount)
+                            } else {
+                                stringResource(R.string.chat_menu_requests_blocks)
+                            }
+                        )
+                    },
+                    leadingIcon = { Icon(Icons.Default.SupervisedUserCircle, contentDescription = null) },
+                    onClick = {
+                        onToggleFabMenu(false)
+                        onOpenRequests()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.chat_menu_new_group)) },
+                    leadingIcon = { Icon(Icons.Default.GroupAdd, contentDescription = null) },
+                    onClick = {
+                        onToggleFabMenu(false)
+                        onOpenCreateGroup()
+                    }
                 )
             }
         }
@@ -379,31 +676,13 @@ private fun ContactsListPane(
 }
 
 @Composable
-private fun MockupContactRowItem(
-    contact: ChatContact,
-    index: Int,
+private fun DirectChatRowItem(
+    summary: DirectChatSummary,
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
     val palette = TabletNotesTheme.palette
-    val courseStyle = CourseFolderPalette.allStyles[index % CourseFolderPalette.allStyles.size]
-
-    val avatarBg = when {
-        palette.usePastelFolderCards -> courseStyle.pastelSurfaceLight
-        palette.isDark -> palette.surfaceInteractive
-        else -> palette.surfaceElevated
-    }
-    val avatarTextColor = when {
-        palette.usePastelFolderCards -> courseStyle.dotLight
-        palette.isDark -> palette.primaryAccent
-        else -> palette.primaryAccent
-    }
-
-    val rowBg = if (isSelected) {
-        palette.primaryAccent.copy(alpha = 0.12f)
-    } else {
-        palette.appBackground.copy(alpha = 0.01f)
-    }
+    val rowBg = if (isSelected) palette.primaryAccent.copy(alpha = 0.12f) else palette.appBackground.copy(alpha = 0.01f)
 
     Row(
         modifier = Modifier
@@ -413,60 +692,48 @@ private fun MockupContactRowItem(
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp)
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Yuvarlak Avatar (A, M, A)
-        Surface(
-            shape = CircleShape,
-            color = avatarBg,
-            border = if (!palette.usePastelFolderCards && !palette.isDark) {
-                BorderStroke(1.dp, palette.borderSubtle)
-            } else {
-                null
-            },
-            modifier = Modifier.size(46.dp)
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Text(
-                    text = contact.avatarInitials.take(1),
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = avatarTextColor
-                )
-            }
-        }
+        UserAvatarBadge(
+            displayName = summary.peerProfile.displayName,
+            avatarPresetId = summary.peerProfile.avatarPreset,
+            size = 46.dp
+        )
 
-        // İsim ve Son Mesaj Önizlemesi
         Column(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             Text(
-                text = contact.displayName,
+                text = summary.peerProfile.displayName,
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                 color = palette.textPrimary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = contact.lastMessagePreview,
-                style = MaterialTheme.typography.bodyMedium,
+                text = summary.lastMessageText.ifBlank {
+                    stringResource(R.string.chat_direct_tap_to_start)
+                },
+                style = MaterialTheme.typography.bodySmall,
                 color = palette.textMuted,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
         }
 
-        // Sağ Tarih ("Dün", "29.01.2026") ve Okunmamış Mesaj Rozeti ("2")
         Column(
             horizontalAlignment = Alignment.End,
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Text(
-                text = formatContactDateLabel(contact.id, contact.lastMessageTimeMillis),
-                style = MaterialTheme.typography.labelSmall,
-                color = palette.textMuted
-            )
-            if (contact.unreadCount > 0) {
+            if (summary.lastMessageAtMillis > 0L) {
+                Text(
+                    text = formatCompactDateLabel(summary.lastMessageAtMillis),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.textMuted
+                )
+            }
+            if (summary.unreadCount > 0) {
                 Box(
                     modifier = Modifier
                         .size(20.dp)
@@ -475,7 +742,7 @@ private fun MockupContactRowItem(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = contact.unreadCount.toString(),
+                        text = summary.unreadCount.coerceAtMost(99).toString(),
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                         color = palette.onPrimaryAccent
                     )
@@ -486,29 +753,311 @@ private fun MockupContactRowItem(
 }
 
 @Composable
-private fun ConversationDetailPane(
-    contact: ChatContact,
-    messages: List<ChatMessage>,
-    isOnline: Boolean,
-    bannerMessage: String?,
+private fun GroupChatRowItem(
+    group: GroupChatSummary,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    val palette = TabletNotesTheme.palette
+    val rowBg = if (isSelected) palette.primaryAccent.copy(alpha = 0.12f) else palette.appBackground.copy(alpha = 0.01f)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(rowBg)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        UserAvatarBadge(
+            displayName = group.name,
+            avatarPresetId = group.avatarPreset,
+            size = 46.dp
+        )
+
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = group.name,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = palette.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                if (group.isMutedLocally) {
+                    Icon(
+                        imageVector = Icons.Default.NotificationsOff,
+                        contentDescription = stringResource(R.string.group_muted_badge),
+                        tint = palette.textMuted,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
+            val preview = if (group.lastMessageText.isNotBlank()) {
+                val prefix = group.lastMessageSenderName?.takeIf { it.isNotBlank() }?.let { "$it: " } ?: ""
+                prefix + group.lastMessageText
+            } else {
+                stringResource(R.string.group_members_count_fmt, group.memberIds.size)
+            }
+            Text(
+                text = preview,
+                style = MaterialTheme.typography.bodySmall,
+                color = palette.textMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        Column(
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            if (group.lastMessageAtMillis > 0L) {
+                Text(
+                    text = formatCompactDateLabel(group.lastMessageAtMillis),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.textMuted
+                )
+            }
+            if (group.hasUnread && !group.isMutedLocally) {
+                Box(
+                    modifier = Modifier
+                        .size(10.dp)
+                        .clip(CircleShape)
+                        .background(palette.primaryAccent)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActiveConversationContainer(
+    myProfile: PublicUserProfile,
+    activeTarget: ActiveConversationTarget?,
+    groupItems: List<GroupChatSummary>,
+    messages: List<FirestoreChatMessage>,
+    hasMoreOlder: Boolean,
+    isLoadingOlder: Boolean,
+    noticeRes: Int?,
     composerText: String,
     onComposerTextChange: (String) -> Unit,
-    onSendText: () -> Unit,
-    onOpenNotePicker: () -> Unit,
-    onDismissBanner: () -> Unit,
-    onToggleOffline: () -> Unit,
-    onSimulateIncomingNote: () -> Unit,
-    onDownloadAndDecrypt: (ChatMessage) -> Unit,
-    onRetryUpload: (String) -> Unit,
-    onOpenNoteInEditor: (String) -> Unit,
+    onSend: () -> Unit,
+    onLoadOlder: () -> Unit,
+    onRetryFailed: (FirestoreChatMessage) -> Unit,
+    onDeleteOwnMessage: (String) -> Unit,
+    onReportUserOrMessage: (ReportRequest) -> Unit,
+    onUnfriend: (String) -> Unit,
+    onBlockUser: (PublicUserProfile) -> Unit,
+    onAttachNoteClick: () -> Unit,
+    onOpenGroupSettings: (GroupChatSummary) -> Unit,
+    onToggleGroupMute: (String) -> Unit,
+    onDismissNotice: () -> Unit,
     showBackButton: Boolean,
     onBackClick: () -> Unit
 ) {
     val palette = TabletNotesTheme.palette
-    var showDevMenu by remember { mutableStateOf(false) }
+
+    when (activeTarget) {
+        null -> {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    text = stringResource(R.string.chat_section_subtitle),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = palette.textMuted,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(24.dp)
+                )
+            }
+        }
+
+        is ActiveConversationTarget.Direct -> {
+            ConversationDetailPane(
+                myUid = myProfile.uid,
+                title = activeTarget.peer.displayName,
+                subtitle = "@${activeTarget.peer.username} • ${stringResource(R.string.chat_peer_badge_verified)}",
+                avatarPreset = activeTarget.peer.avatarPreset,
+                isGroup = false,
+                canSendMessages = true,
+                messages = messages,
+                hasMoreOlder = hasMoreOlder,
+                isLoadingOlder = isLoadingOlder,
+                noticeRes = noticeRes,
+                composerText = composerText,
+                onComposerTextChange = onComposerTextChange,
+                onSend = onSend,
+                onLoadOlder = onLoadOlder,
+                onRetryFailed = onRetryFailed,
+                onDeleteOwnMessage = onDeleteOwnMessage,
+                onReportMessage = { msg ->
+                    onReportUserOrMessage(
+                        ReportRequest(
+                            targetType = "direct_message",
+                            targetLabel = "${activeTarget.peer.displayName}: ${msg.text.take(40)}",
+                            targetUserId = msg.senderId,
+                            targetChatId = activeTarget.chatId,
+                            targetMessageId = msg.id
+                        )
+                    )
+                },
+                onAttachNoteClick = onAttachNoteClick,
+                onDismissNotice = onDismissNotice,
+                showBackButton = showBackButton,
+                onBackClick = onBackClick,
+                menuContent = { closeMenu ->
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.friends_btn_unfriend)) },
+                        leadingIcon = { Icon(Icons.Default.PersonRemove, contentDescription = null) },
+                        onClick = {
+                            closeMenu()
+                            onUnfriend(activeTarget.peer.uid)
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.friends_btn_block)) },
+                        leadingIcon = { Icon(Icons.Default.Block, contentDescription = null) },
+                        onClick = {
+                            closeMenu()
+                            onBlockUser(activeTarget.peer)
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.friends_btn_report)) },
+                        leadingIcon = { Icon(Icons.Default.Flag, contentDescription = null) },
+                        onClick = {
+                            closeMenu()
+                            onReportUserOrMessage(
+                                ReportRequest(
+                                    targetType = "user",
+                                    targetLabel = "${activeTarget.peer.displayName} (@${activeTarget.peer.username})",
+                                    targetUserId = activeTarget.peer.uid,
+                                    targetChatId = activeTarget.chatId,
+                                    targetMessageId = null
+                                )
+                            )
+                        }
+                    )
+                }
+            )
+        }
+
+        is ActiveConversationTarget.Group -> {
+            val group = groupItems.firstOrNull { it.groupId == activeTarget.groupId }
+            if (group == null) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = stringResource(R.string.chat_section_subtitle),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = palette.textMuted
+                    )
+                }
+            } else {
+                val myRole = group.roles[myProfile.uid] ?: GroupRole.MEMBER
+                val canSend = group.whoCanSend == GroupSendPermission.EVERYONE ||
+                    myRole == GroupRole.OWNER || myRole == GroupRole.ADMIN
+
+                ConversationDetailPane(
+                    myUid = myProfile.uid,
+                    title = group.name,
+                    subtitle = stringResource(R.string.group_members_count_fmt, group.memberIds.size),
+                    avatarPreset = group.avatarPreset,
+                    isGroup = true,
+                    canSendMessages = canSend,
+                    messages = messages,
+                    hasMoreOlder = hasMoreOlder,
+                    isLoadingOlder = isLoadingOlder,
+                    noticeRes = noticeRes,
+                    composerText = composerText,
+                    onComposerTextChange = onComposerTextChange,
+                    onSend = onSend,
+                    onLoadOlder = onLoadOlder,
+                    onRetryFailed = onRetryFailed,
+                    onDeleteOwnMessage = onDeleteOwnMessage,
+                    onReportMessage = { msg ->
+                        onReportUserOrMessage(
+                            ReportRequest(
+                                targetType = "group_message",
+                                targetLabel = "${msg.senderName}: ${msg.text.take(40)}",
+                                targetUserId = msg.senderId,
+                                targetChatId = group.groupId,
+                                targetMessageId = msg.id
+                            )
+                        )
+                    },
+                    onAttachNoteClick = onAttachNoteClick,
+                    onDismissNotice = onDismissNotice,
+                    showBackButton = showBackButton,
+                    onBackClick = onBackClick,
+                    menuContent = { closeMenu ->
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.group_settings_btn)) },
+                            leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                            onClick = {
+                                closeMenu()
+                                onOpenGroupSettings(group)
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.group_mute_local_label)) },
+                            leadingIcon = { Icon(Icons.Default.NotificationsOff, contentDescription = null) },
+                            onClick = {
+                                closeMenu()
+                                onToggleGroupMute(group.groupId)
+                            }
+                        )
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConversationDetailPane(
+    myUid: String,
+    title: String,
+    subtitle: String,
+    avatarPreset: String,
+    isGroup: Boolean,
+    canSendMessages: Boolean,
+    messages: List<FirestoreChatMessage>,
+    hasMoreOlder: Boolean,
+    isLoadingOlder: Boolean,
+    noticeRes: Int?,
+    composerText: String,
+    onComposerTextChange: (String) -> Unit,
+    onSend: () -> Unit,
+    onLoadOlder: () -> Unit,
+    onRetryFailed: (FirestoreChatMessage) -> Unit,
+    onDeleteOwnMessage: (String) -> Unit,
+    onReportMessage: (FirestoreChatMessage) -> Unit,
+    onAttachNoteClick: () -> Unit,
+    onDismissNotice: () -> Unit,
+    showBackButton: Boolean,
+    onBackClick: () -> Unit,
+    menuContent: @Composable (closeMenu: () -> Unit) -> Unit
+) {
+    val palette = TabletNotesTheme.palette
+    var showMoreMenu by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.lastIndex)
+        }
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Kompakt Sohbet Üst Başlığı
+        // Üst Başlık
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -539,42 +1088,27 @@ private fun ConversationDetailPane(
                     }
                 }
 
-                Box(
-                    modifier = Modifier
-                        .size(38.dp)
-                        .clip(CircleShape)
-                        .background(palette.primaryAccent.copy(alpha = 0.16f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = contact.avatarInitials.take(1),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = palette.primaryAccent
-                    )
-                }
+                UserAvatarBadge(
+                    displayName = title,
+                    avatarPresetId = avatarPreset,
+                    size = 38.dp
+                )
 
                 Column {
                     Text(
-                        text = contact.displayName,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = palette.textPrimary
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = palette.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Lock,
-                            contentDescription = null,
-                            tint = palette.statusReadyEmerald,
-                            modifier = Modifier.size(12.dp)
-                        )
-                        Text(
-                            text = stringResource(R.string.chat_e2ee_badge),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = palette.textMuted
-                        )
-                    }
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.textMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
 
@@ -582,8 +1116,9 @@ private fun ConversationDetailPane(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
+                // Not Ekle (Faz 2'de Yakında + Nearby bilgisi)
                 OutlinedButton(
-                    onClick = onOpenNotePicker,
+                    onClick = onAttachNoteClick,
                     shape = CircleShape,
                     border = BorderStroke(1.dp, palette.border),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
@@ -604,7 +1139,7 @@ private fun ConversationDetailPane(
 
                 Box {
                     IconButton(
-                        onClick = { showDevMenu = true },
+                        onClick = { showMoreMenu = true },
                         modifier = Modifier.size(34.dp)
                     ) {
                         Icon(
@@ -615,31 +1150,10 @@ private fun ConversationDetailPane(
                         )
                     }
                     DropdownMenu(
-                        expanded = showDevMenu,
-                        onDismissRequest = { showDevMenu = false }
+                        expanded = showMoreMenu,
+                        onDismissRequest = { showMoreMenu = false }
                     ) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.chat_simulate_incoming_btn)) },
-                            onClick = {
-                                showDevMenu = false
-                                onSimulateIncomingNote()
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    if (isOnline) {
-                                        stringResource(R.string.chat_offline_toggle_online)
-                                    } else {
-                                        stringResource(R.string.chat_offline_toggle_offline)
-                                    }
-                                )
-                            },
-                            onClick = {
-                                showDevMenu = false
-                                onToggleOffline()
-                            }
-                        )
+                        menuContent { showMoreMenu = false }
                     }
                 }
             }
@@ -647,7 +1161,7 @@ private fun ConversationDetailPane(
 
         HorizontalDivider(color = palette.borderSubtle)
 
-        if (bannerMessage != null) {
+        if (noticeRes != null) {
             Surface(
                 color = palette.primaryAccent.copy(alpha = 0.14f),
                 border = BorderStroke(1.dp, palette.primaryAccent),
@@ -664,91 +1178,167 @@ private fun ConversationDetailPane(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = bannerMessage,
+                        text = stringResource(noticeRes),
                         style = MaterialTheme.typography.labelMedium,
                         color = palette.textPrimary,
                         modifier = Modifier.weight(1f)
                     )
-                    TextButton(onClick = onDismissBanner) {
+                    TextButton(onClick = onDismissNotice) {
                         Text(text = stringResource(R.string.editor_json_debug_close))
                     }
                 }
             }
         }
 
-        // Mesaj Akışı
+        // Mesaj Listesi (Tarih ayırıcılar + sayfalama)
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
                 .background(palette.appBackground.copy(alpha = 0.45f)),
             contentPadding = PaddingValues(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(messages, key = { it.id }) { msg ->
-                ChatMessageBubble(
-                    message = msg,
-                    onDownloadAndDecrypt = { onDownloadAndDecrypt(msg) },
-                    onRetryUpload = { onRetryUpload(msg.id) },
-                    onOpenInEditor = { noteId -> onOpenNoteInEditor(noteId) }
-                )
+            if (hasMoreOlder) {
+                item(key = "load_older_header") {
+                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        TextButton(
+                            onClick = onLoadOlder,
+                            enabled = !isLoadingOlder
+                        ) {
+                            Text(
+                                text = if (isLoadingOlder) {
+                                    stringResource(R.string.chat_loading_older)
+                                } else {
+                                    stringResource(R.string.chat_load_older_btn)
+                                },
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (messages.isEmpty()) {
+                item(key = "empty_msgs") {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 48.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = stringResource(R.string.chat_empty_messages),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = palette.textMuted,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            } else {
+                itemsIndexed(messages, key = { _, msg -> msg.id }) { index, msg ->
+                    val showDateHeader = index == 0 ||
+                        !isSameDay(messages[index - 1].createdAtMillis, msg.createdAtMillis)
+                    if (showDateHeader) {
+                        DateSeparatorChip(timestampMillis = msg.createdAtMillis)
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
+
+                    TextChatMessageBubble(
+                        message = msg,
+                        isMine = msg.senderId == myUid,
+                        showSenderName = isGroup && msg.senderId != myUid,
+                        onRetry = { onRetryFailed(msg) },
+                        onDeleteOwn = { onDeleteOwnMessage(msg.id) },
+                        onReport = { onReportMessage(msg) }
+                    )
+                }
             }
         }
 
         HorizontalDivider(color = palette.borderSubtle)
 
-        // Alt Mesaj Yazma Çubuğu (Kompakt Pill Tasarımı)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Surface(
-                shape = CircleShape,
-                color = palette.surfaceInteractive,
+        if (!canSendMessages) {
+            Box(
                 modifier = Modifier
-                    .weight(1f)
-                    .height(40.dp)
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Box(
+                Text(
+                    text = stringResource(R.string.group_admins_only_composer_notice),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = palette.textMuted,
+                    textAlign = TextAlign.Center
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = palette.surfaceInteractive,
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp),
-                    contentAlignment = Alignment.CenterStart
+                        .weight(1f)
+                        .height(42.dp)
                 ) {
-                    if (composerText.isEmpty()) {
-                        Text(
-                            text = stringResource(R.string.chat_composer_hint),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = palette.textMuted
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                            if (composerText.isEmpty()) {
+                                Text(
+                                    text = stringResource(R.string.chat_composer_text_only_hint),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = palette.textMuted,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            BasicTextField(
+                                value = composerText,
+                                onValueChange = onComposerTextChange,
+                                singleLine = true,
+                                textStyle = MaterialTheme.typography.bodyMedium.copy(color = palette.textPrimary),
+                                cursorBrush = SolidColor(palette.primaryAccent),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        if (composerText.length >= 1700) {
+                            Text(
+                                text = stringResource(R.string.chat_char_counter_fmt, composerText.length),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (composerText.length >= 2000) palette.secondaryAccent else palette.textMuted,
+                                modifier = Modifier.padding(start = 8.dp)
+                            )
+                        }
+                    }
+                }
+
+                Surface(
+                    onClick = onSend,
+                    shape = CircleShape,
+                    color = if (composerText.isNotBlank()) palette.primaryAccent else palette.surfaceInteractive,
+                    modifier = Modifier.size(42.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Send,
+                            contentDescription = stringResource(R.string.chat_send_btn),
+                            tint = if (composerText.isNotBlank()) palette.onPrimaryAccent else palette.textMuted,
+                            modifier = Modifier.size(18.dp)
                         )
                     }
-                    BasicTextField(
-                        value = composerText,
-                        onValueChange = onComposerTextChange,
-                        singleLine = true,
-                        textStyle = MaterialTheme.typography.bodyMedium.copy(color = palette.textPrimary),
-                        cursorBrush = SolidColor(palette.primaryAccent),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            }
-
-            Surface(
-                onClick = onSendText,
-                shape = CircleShape,
-                color = palette.primaryAccent,
-                modifier = Modifier.size(40.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Send,
-                        contentDescription = stringResource(R.string.chat_send_btn),
-                        tint = palette.onPrimaryAccent,
-                        modifier = Modifier.size(18.dp)
-                    )
                 }
             }
         }
@@ -756,476 +1346,198 @@ private fun ConversationDetailPane(
 }
 
 @Composable
-private fun ChatMessageBubble(
-    message: ChatMessage,
-    onDownloadAndDecrypt: () -> Unit,
-    onRetryUpload: () -> Unit,
-    onOpenInEditor: (String) -> Unit
-) {
+private fun DateSeparatorChip(timestampMillis: Long) {
     val palette = TabletNotesTheme.palette
-    val alignment = if (message.isOutgoing) Alignment.CenterEnd else Alignment.CenterStart
-    val bubbleColor = if (message.isOutgoing) {
-        palette.primaryAccent.copy(alpha = 0.16f)
-    } else {
-        palette.surfaceElevated
-    }
-    val bubbleBorder = if (message.isOutgoing) {
-        palette.primaryAccent.copy(alpha = 0.40f)
-    } else {
-        palette.borderSubtle
+    val today = remember { Calendar.getInstance() }
+    val msgCal = remember(timestampMillis) { Calendar.getInstance().apply { timeInMillis = timestampMillis } }
+
+    val label = when {
+        isSameCalendarDay(today, msgCal) -> stringResource(R.string.chat_date_today)
+        isYesterdayCalendarDay(today, msgCal) -> stringResource(R.string.chat_date_yesterday)
+        else -> SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date(timestampMillis))
     }
 
+    Box(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center
+    ) {
+        Surface(
+            color = palette.surfaceElevated,
+            shape = CircleShape,
+            border = BorderStroke(1.dp, palette.borderSubtle)
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = palette.textMuted,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun TextChatMessageBubble(
+    message: FirestoreChatMessage,
+    isMine: Boolean,
+    showSenderName: Boolean,
+    onRetry: () -> Unit,
+    onDeleteOwn: () -> Unit,
+    onReport: () -> Unit
+) {
+    val palette = TabletNotesTheme.palette
+    val alignment = if (isMine) Alignment.CenterEnd else Alignment.CenterStart
+    val bubbleColor = if (isMine) palette.primaryAccent.copy(alpha = 0.16f) else palette.surfaceElevated
+    val bubbleBorder = when (message.deliveryStatus) {
+        MessageDeliveryStatus.FAILED -> palette.secondaryAccent
+        else -> if (isMine) palette.primaryAccent.copy(alpha = 0.40f) else palette.borderSubtle
+    }
     val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
+    var showMsgMenu by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier.fillMaxWidth(),
         contentAlignment = alignment
     ) {
-        Surface(
-            color = bubbleColor,
-            shape = RoundedCornerShape(18.dp),
-            border = BorderStroke(1.dp, bubbleBorder),
-            modifier = Modifier.widthIn(min = 180.dp, max = 440.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                if (message.type == ChatMessageType.NOTE_ATTACHMENT && message.noteAttachment != null) {
-                    NoteAttachmentCard(
-                        message = message,
-                        onDownloadAndDecrypt = onDownloadAndDecrypt,
-                        onRetryUpload = onRetryUpload,
-                        onOpenInEditor = onOpenInEditor
+        Box {
+            Surface(
+                color = bubbleColor,
+                shape = RoundedCornerShape(18.dp),
+                border = BorderStroke(1.dp, bubbleBorder),
+                modifier = Modifier
+                    .widthIn(min = 120.dp, max = 460.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .combinedClickable(
+                        onClick = {
+                            if (isMine && message.deliveryStatus == MessageDeliveryStatus.FAILED) {
+                                onRetry()
+                            }
+                        },
+                        onLongClick = { showMsgMenu = true }
                     )
-                } else {
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    if (showSenderName && message.senderName.isNotBlank()) {
+                        Text(
+                            text = message.senderName,
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = palette.primaryAccent
+                        )
+                    }
+
                     Text(
-                        text = message.textContent,
-                        style = MaterialTheme.typography.bodyLarge,
+                        text = message.text,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = palette.textPrimary
                     )
-                }
 
-                Row(
-                    modifier = Modifier.align(Alignment.End),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Lock,
-                        contentDescription = null,
-                        tint = palette.textMuted,
-                        modifier = Modifier.size(11.dp)
-                    )
-                    Text(
-                        text = timeFormat.format(Date(message.timestampMillis)),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = palette.textMuted
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun NoteAttachmentCard(
-    message: ChatMessage,
-    onDownloadAndDecrypt: () -> Unit,
-    onRetryUpload: () -> Unit,
-    onOpenInEditor: (String) -> Unit
-) {
-    val palette = TabletNotesTheme.palette
-    val att = message.noteAttachment ?: return
-    val state = message.relayState
-
-    val thumbBitmap = remember(att.thumbnailPath) {
-        att.thumbnailPath?.let { path ->
-            val file = File(path)
-            if (file.exists()) BitmapFactory.decodeFile(file.absolutePath) else null
-        }
-    }
-
-    Surface(
-        color = palette.surface,
-        shape = RoundedCornerShape(14.dp),
-        border = BorderStroke(1.dp, palette.borderSubtle),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier.padding(10.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Surface(
-                    color = palette.appBackground,
-                    shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, palette.borderSubtle),
-                    modifier = Modifier.size(width = 56.dp, height = 72.dp)
-                ) {
-                    if (thumbBitmap != null) {
-                        Image(
-                            bitmap = thumbBitmap.asImageBitmap(),
-                            contentDescription = att.noteTitle,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                            Icon(
-                                imageVector = Icons.Default.Description,
-                                contentDescription = null,
-                                tint = palette.primaryAccent,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                    }
-                }
-
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(3.dp)
-                ) {
-                    Text(
-                        text = att.noteTitle,
-                        style = MaterialTheme.typography.titleSmall,
-                        color = palette.textPrimary,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = stringResource(
-                            R.string.notes_card_meta_format,
-                            att.pageCount,
-                            att.strokeCount,
-                            formatFileSize(att.fileSizeBytes)
-                        ),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = palette.textMuted
-                    )
-                    RelayStatusChip(state = state, progress = att.uploadProgressPercent)
-                }
-            }
-
-            if (state == RelayTransferState.ENCRYPTING_AND_UPLOADING ||
-                state == RelayTransferState.DOWNLOADING_AND_DECRYPTING
-            ) {
-                LinearProgressIndicator(
-                    progress = { (att.uploadProgressPercent / 100f).coerceIn(0.05f, 1f) },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                when {
-                    !message.isOutgoing && state == RelayTransferState.WAITING_IN_RELAY -> {
-                        Button(
-                            onClick = onDownloadAndDecrypt,
-                            shape = CircleShape,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = palette.primaryAccent,
-                                contentColor = palette.onPrimaryAccent
-                            ),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CloudDownload,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = stringResource(R.string.chat_note_download_decrypt),
-                                style = MaterialTheme.typography.labelMedium
-                            )
-                        }
-                    }
-
-                    state == RelayTransferState.UPLOAD_INTERRUPTED ||
-                        state == RelayTransferState.QUEUED_OFFLINE ||
-                        state == RelayTransferState.FAILED_ERROR -> {
-                        OutlinedButton(
-                            onClick = onRetryUpload,
-                            shape = CircleShape,
-                            border = BorderStroke(1.dp, palette.primaryAccent),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = null,
-                                tint = palette.primaryAccent,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = stringResource(R.string.chat_note_retry_upload),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = palette.primaryAccent
-                            )
-                        }
-                    }
-
-                    message.isOutgoing || state == RelayTransferState.DOWNLOADED_AND_DELETED_FROM_RELAY -> {
-                        OutlinedButton(
-                            onClick = { onOpenInEditor(att.noteId) },
-                            shape = CircleShape,
-                            border = BorderStroke(1.dp, palette.border),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Edit,
-                                contentDescription = null,
-                                tint = palette.primaryAccent,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = stringResource(R.string.chat_note_open_in_editor),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = palette.textPrimary
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun RelayStatusChip(state: RelayTransferState, progress: Int) {
-    val palette = TabletNotesTheme.palette
-    val (icon, label, tint) = when (state) {
-        RelayTransferState.QUEUED_OFFLINE -> Triple(
-            Icons.Default.CloudOff,
-            stringResource(R.string.chat_relay_state_queued),
-            palette.secondaryAccent
-        )
-        RelayTransferState.ENCRYPTING_AND_UPLOADING -> Triple(
-            Icons.Default.CloudUpload,
-            stringResource(R.string.chat_relay_state_uploading, progress),
-            palette.primaryAccent
-        )
-        RelayTransferState.UPLOAD_INTERRUPTED -> Triple(
-            Icons.Default.WarningAmber,
-            stringResource(R.string.chat_relay_state_interrupted, progress),
-            palette.secondaryAccent
-        )
-        RelayTransferState.WAITING_IN_RELAY -> Triple(
-            Icons.Default.Lock,
-            stringResource(R.string.chat_relay_state_waiting),
-            palette.primaryAccent
-        )
-        RelayTransferState.DOWNLOADING_AND_DECRYPTING -> Triple(
-            Icons.Default.CloudDownload,
-            stringResource(R.string.chat_relay_state_downloading),
-            palette.primaryAccent
-        )
-        RelayTransferState.DOWNLOADED_AND_DELETED_FROM_RELAY -> Triple(
-            Icons.Default.CloudDone,
-            stringResource(R.string.chat_relay_state_downloaded),
-            palette.statusReadyEmerald
-        )
-        RelayTransferState.EXPIRED_AUTO_DELETED -> Triple(
-            Icons.Default.WarningAmber,
-            stringResource(R.string.chat_relay_state_expired),
-            palette.secondaryAccent
-        )
-        RelayTransferState.FAILED_TOO_LARGE -> Triple(
-            Icons.Default.WarningAmber,
-            stringResource(R.string.chat_relay_state_too_large),
-            palette.secondaryAccent
-        )
-        RelayTransferState.FAILED_ERROR -> Triple(
-            Icons.Default.WarningAmber,
-            stringResource(R.string.chat_relay_state_error),
-            palette.secondaryAccent
-        )
-        RelayTransferState.NONE -> Triple(
-            Icons.Default.Lock,
-            stringResource(R.string.chat_e2ee_badge),
-            palette.textMuted
-        )
-    }
-
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = tint,
-            modifier = Modifier.size(13.dp)
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = tint
-        )
-    }
-}
-
-@Composable
-private fun NoteAttachmentPickerDialog(
-    notes: List<NoteSummary>,
-    onDismiss: () -> Unit,
-    onSelectNote: (NoteSummary) -> Unit,
-    onSimulateOversize: () -> Unit
-) {
-    val palette = TabletNotesTheme.palette
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(24.dp),
-        containerColor = palette.surfaceElevated,
-        title = { Text(stringResource(R.string.chat_picker_dialog_title)) },
-        text = {
-            Column(
-                modifier = Modifier
-                    .widthIn(min = 380.dp)
-                    .heightIn(max = 360.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                LazyColumn(
-                    modifier = Modifier.weight(1f, fill = false),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(notes, key = { it.id }) { note ->
-                        Surface(
-                            color = palette.surface,
-                            shape = RoundedCornerShape(14.dp),
-                            border = BorderStroke(1.dp, palette.borderSubtle),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onSelectNote(note) }
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = "${note.courseName} › ${note.title}",
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = palette.textPrimary
-                                    )
-                                    Text(
-                                        text = stringResource(
-                                            R.string.notes_card_meta_format,
-                                            note.pageCount,
-                                            note.strokeCount,
-                                            formatFileSize(note.fileSizeBytes)
-                                        ),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = palette.textMuted
-                                    )
-                                }
+                    Row(
+                        modifier = Modifier.align(Alignment.End),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        when (message.deliveryStatus) {
+                            MessageDeliveryStatus.SENDING -> {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(10.dp),
+                                    strokeWidth = 1.5.dp,
+                                    color = palette.textMuted
+                                )
+                                Text(
+                                    text = stringResource(R.string.chat_msg_status_sending),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = palette.textMuted
+                                )
+                            }
+                            MessageDeliveryStatus.FAILED -> {
                                 Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.Send,
+                                    imageVector = Icons.Default.Refresh,
                                     contentDescription = null,
-                                    tint = palette.primaryAccent,
-                                    modifier = Modifier.size(18.dp)
+                                    tint = palette.secondaryAccent,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Text(
+                                    text = stringResource(R.string.chat_msg_status_failed),
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                                    color = palette.secondaryAccent
+                                )
+                            }
+                            MessageDeliveryStatus.SENT -> {
+                                Text(
+                                    text = timeFormat.format(Date(message.createdAtMillis)),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = palette.textMuted
                                 )
                             }
                         }
                     }
                 }
+            }
 
-                TextButton(
-                    onClick = onSimulateOversize,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = stringResource(R.string.chat_picker_simulate_oversize),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = palette.textMuted
+            DropdownMenu(
+                expanded = showMsgMenu,
+                onDismissRequest = { showMsgMenu = false }
+            ) {
+                if (isMine) {
+                    if (message.deliveryStatus == MessageDeliveryStatus.FAILED) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.chat_msg_status_failed)) },
+                            leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
+                            onClick = {
+                                showMsgMenu = false
+                                onRetry()
+                            }
+                        )
+                    }
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.chat_msg_delete)) },
+                        leadingIcon = { Icon(Icons.Default.DeleteOutline, contentDescription = null) },
+                        onClick = {
+                            showMsgMenu = false
+                            onDeleteOwn()
+                        }
+                    )
+                } else {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.chat_msg_report)) },
+                        leadingIcon = { Icon(Icons.Default.Flag, contentDescription = null) },
+                        onClick = {
+                            showMsgMenu = false
+                            onReport()
+                        }
                     )
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.editor_text_dialog_cancel))
-            }
         }
-    )
+    }
 }
 
 @Composable
-private fun AddContactOrGroupDialog(
-    isGroup: Boolean,
-    onDismiss: () -> Unit,
-    onConfirm: (String, String) -> Unit
-) {
-    var name by rememberSaveable { mutableStateOf("") }
-    var handle by rememberSaveable { mutableStateOf("") }
-
-    val palette = TabletNotesTheme.palette
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(24.dp),
-        containerColor = palette.surfaceElevated,
-        title = {
-            Text(
-                stringResource(
-                    if (isGroup) R.string.chat_add_group_dialog_title else R.string.chat_add_contact_dialog_title
-                )
-            )
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text(stringResource(R.string.chat_add_contact_name_hint)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = handle,
-                    onValueChange = { handle = it },
-                    label = { Text(stringResource(R.string.chat_add_contact_handle_hint)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        },
-        confirmButton = {
-            Button(onClick = { onConfirm(name, handle) }) {
-                Text(stringResource(R.string.chat_add_contact_confirm))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.editor_text_dialog_cancel))
-            }
-        }
-    )
+private fun formatCompactDateLabel(timestampMillis: Long): String {
+    val calNow = Calendar.getInstance()
+    val calMsg = Calendar.getInstance().apply { timeInMillis = timestampMillis }
+    return when {
+        isSameCalendarDay(calNow, calMsg) -> SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(timestampMillis))
+        isYesterdayCalendarDay(calNow, calMsg) -> stringResource(R.string.chat_date_yesterday)
+        else -> SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).format(Date(timestampMillis))
+    }
 }
 
-private fun formatContactDateLabel(contactId: String, timestampMillis: Long): String {
-    return when (contactId) {
-        "contact_ahmet" -> "Dün"
-        "contact_mehmet" -> "29.01.2026"
-        "contact_ali" -> "22.01.2026"
-        else -> {
-            val diff = System.currentTimeMillis() - timestampMillis
-            if (diff < 36 * 3_600_000L) {
-                "Dün"
-            } else {
-                SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).format(Date(timestampMillis))
-            }
-        }
-    }
+private fun isSameDay(t1: Long, t2: Long): Boolean {
+    val c1 = Calendar.getInstance().apply { timeInMillis = t1 }
+    val c2 = Calendar.getInstance().apply { timeInMillis = t2 }
+    return isSameCalendarDay(c1, c2)
+}
+
+private fun isSameCalendarDay(c1: Calendar, c2: Calendar): Boolean =
+    c1.get(Calendar.YEAR) == c2.get(Calendar.YEAR) &&
+        c1.get(Calendar.DAY_OF_YEAR) == c2.get(Calendar.DAY_OF_YEAR)
+
+private fun isYesterdayCalendarDay(today: Calendar, candidate: Calendar): Boolean {
+    val yesterday = (today.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -1) }
+    return isSameCalendarDay(yesterday, candidate)
 }

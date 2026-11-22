@@ -270,4 +270,66 @@
     <string name="report_submitted_notice">Şikayetiniz güvenlik kaydına iletildi ✓</string>
     <string name="chat_error_message_too_long">Mesaj en fazla 2000 karakter olabilir.</string>
     <string name="group_error_member_limit">Bir çalışma grubunda en fazla 50 üye bulunabilir.</string>
+
+    <!-- Faz 2 M4 & M5: Gerçek Zamanlı 1:1 Sohbet, Gruplar ve Roller -->
+    <string name="chat_offline_banner">Çevrimdışı Mod — Önbellekteki mesajlar ve veriler gösteriliyor.</string>
+    <string name="chat_load_older_btn">Daha Eski Mesajları Yükle</string>
+    <string name="chat_loading_older">Eski mesajlar yükleniyor…</string>
+    <string name="chat_date_today">Bugün</string>
+    <string name="chat_date_yesterday">Dün</string>
+    <string name="chat_msg_status_sending">Gönderiliyor…</string>
+    <string name="chat_msg_status_failed">Gönderilemedi • Yeniden Dene</string>
+    <string name="chat_msg_delete">Sil</string>
+    <string name="chat_msg_report">Şikayet Et</string>
+    <string name="chat_attach_coming_soon_title">Not Gönderimi Yakında (Faz 3)</string>
+    <string name="chat_attach_coming_soon_body">Faz 2 (Spark Plan) sürümünde sohbetler yalnızca metin tabanlıdır; not dosyaları sunucudan gönderilmez. Notlarınızı yanınızdaki tabletle paylaşmak için Yakın Paylaşım (Nearby) özelliğini kullanabilirsiniz.</string>
+    <string name="chat_attach_go_nearby">Yakın Paylaşıma Git</string>
+    <string name="chat_empty_friends_list">Henüz ekli arkadaşınız yok. Sağ alttaki + butonuna dokunarak @kullanıcı_adı veya QR kod ile arkadaş ekleyin.</string>
+    <string name="chat_empty_groups_list">Henüz bir çalışma grubunuz yok. Sağ alttaki + butonundan yeni bir grup kurabilirsiniz.</string>
+    <string name="chat_empty_messages">Henüz mesaj yok. İlk mesajı aşağıdan gönderebilirsiniz.</string>
+    <string name="chat_menu_add_friend_qr">Arkadaş Ekle (@ad / QR)</string>
+    <string name="chat_menu_requests_blocks">İstekler ve Engellenenler</string>
+    <string name="chat_menu_requests_blocks_fmt">İstekler ve Engellenenler (%1$d)</string>
+    <string name="chat_menu_new_group">Yeni Grup Oluştur</string>
+    <string name="chat_direct_tap_to_start">Sohbet başlatmak için yazın</string>
+    <string name="chat_peer_badge_verified">Spark • Yalnızca Metin Sohbeti</string>
+    <string name="chat_composer_text_only_hint">Mesajınızı yazın (en fazla 2000 karakter)…</string>
+    <string name="chat_char_counter_fmt">%1$d / 2000</string>
+    <string name="chat_editor_share_text_only_note">Sunucu üzerinden not dosyası gönderimi Faz 3\'te açılacaktır. Şu anda yalnızca internet gerektirmeyen Yakın Paylaşım (Nearby) aktiftir.</string>
+
+    <!-- Faz 2 M5: Çalışma Grupları -->
+    <string name="group_create_title">Yeni Çalışma Grubu Oluştur</string>
+    <string name="group_name_label">Grup Adı</string>
+    <string name="group_desc_label">Açıklama (İsteğe Bağlı)</string>
+    <string name="group_pick_members_fmt">Üye Seç (%1$d / 50)</string>
+    <string name="group_no_friends_to_add">Gruba eklenecek başka arkadaşınız yok.</string>
+    <string name="group_create_btn">Grubu Oluştur</string>
+    <string name="group_settings_title">Grup Ayarları ve Üyeler</string>
+    <string name="group_settings_btn">Grup Ayarları</string>
+    <string name="group_who_can_send_label">Kimler Mesaj Gönderebilir?</string>
+    <string name="group_send_everyone">Herkes</string>
+    <string name="group_send_admins_only">Yalnızca Yöneticiler</string>
+    <string name="group_admins_only_composer_notice">Bu grupta yalnızca kurucu ve yöneticiler mesaj gönderebilir.</string>
+    <string name="group_mute_local_label">Bildirimleri Sessize Al (Yalnızca Bu Cihazda)</string>
+    <string name="group_muted_badge">Sessizde</string>
+    <string name="group_save_settings_btn">Ayarları Kaydet</string>
+    <string name="group_add_members_btn">Üye Ekle</string>
+    <string name="group_members_header_fmt">Üyeler (%1$d / 50)</string>
+    <string name="group_role_owner">Kurucu</string>
+    <string name="group_role_admin">Yönetici</string>
+    <string name="group_role_member">Üye</string>
+    <string name="group_make_admin">Yönetici Yap</string>
+    <string name="group_remove_admin">Yöneticiliği Al</string>
+    <string name="group_remove_member">Çıkar</string>
+    <string name="group_leave_btn">Gruptan Ayrıl</string>
+    <string name="group_delete_btn">Grubu Kalıcı Olarak Sil</string>
+    <string name="group_delete_confirm_msg">Bu grubu ve sohbet geçmişini tüm üyeler için silmek istediğinize emin misiniz?</string>
+    <string name="group_members_count_fmt">%1$d üye</string>
+
+    <!-- Faz 2 M6: Hesap Silme -->
+    <string name="auth_delete_account_btn">Hesabımı Kalıcı Olarak Sil</string>
+    <string name="auth_delete_account_title">Hesabı Silmek Üzeresiniz</string>
+    <string name="auth_delete_account_desc">Bu işlem profilinizi, kullanıcı adınızı, arkadaşlık listenizi ve kimliğinizi siler (sunucu kodu olmadığı için diğer kişilerin sohbetlerindeki eski mesajlar Faz 3\'e kadar kalabilir). Tabletinizdeki yerel notlar silinmez.</string>
+    <string name="auth_delete_password_confirm_label">Doğrulama için Mevcut Şifreniz</string>
+    <string name="auth_delete_confirm_cta">Kalıcı Olarak Sil</string>
 </resources>

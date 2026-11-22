@@ -7,6 +7,8 @@ import com.tabletnotes.app.core.network.AndroidConnectivityObserver
 import com.tabletnotes.app.core.network.ConnectivityObserver
 import com.tabletnotes.app.feature.chat.auth.AuthService
 import com.tabletnotes.app.feature.chat.auth.HybridAuthService
+import com.tabletnotes.app.feature.chat.data.FirestoreMessagingRepository
+import com.tabletnotes.app.feature.chat.data.MessagingRepository
 import com.tabletnotes.app.feature.chat.friends.FirestoreFriendsRepository
 import com.tabletnotes.app.feature.chat.friends.FriendsRepository
 import com.tabletnotes.app.feature.chat.relay.HybridFirebaseRelayStorage
@@ -39,6 +41,10 @@ abstract class ChatBindingsModule {
     @Binds
     @Singleton
     abstract fun bindFriendsRepository(impl: FirestoreFriendsRepository): FriendsRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindMessagingRepository(impl: FirestoreMessagingRepository): MessagingRepository
 }
 
 @Module

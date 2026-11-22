@@ -54,6 +54,7 @@ interface AuthService {
 
     suspend fun sendPasswordReset(email: String): Result<Unit>
     suspend fun signOut()
+    suspend fun deleteAccountWithPassword(password: String): Result<Unit>
 
     // Geriye dönük uyumluluk yardımcıları
     suspend fun signInOrUpdateProfile(displayName: String, emailOrPhone: String): UserProfile
@@ -316,6 +317,96 @@ class HybridAuthService @Inject constructor(
         detachProfileListener()
         firebaseProvider.authOrNull?.signOut()
         _authState.value = AccountAuthState.SignedOut
+    }
+
+    override suspend fun deleteAccountWithPassword(password: String): Result<Unit> = runCatching {
+        val auth = firebaseProvider.authOrNull ?: throw FirebaseNotConfiguredException()
+        val firestore = firebaseProvider.firestoreOrNull ?: throw FirebaseNotConfiguredException()
+        val user = auth.currentUser ?: throw NotSignedInException()
+        val uid = user.uid
+        val signedInState = _authState.value as? AccountAuthState.SignedIn
+        val currentUsername = signedInState?.profile?.username
+
+        val email = user.email
+        if (!email.isNullOrBlank() && password.isNotBlank()) {
+            val credential = com.google.firebase.auth.EmailAuthProvider.getCredential(email, password)
+            user.reauthenticate(credential).await()
+        }
+
+        detachProfileListener()
+
+        // 1. Kendi engelleme kayıtlarını sil (en iyi çaba)
+        runCatching {
+            val blocksSnap = firestore.collection("blocks")
+                .whereEqualTo("blockerUid", uid)
+                .limit(100)
+                .get()
+                .await()
+            if (!blocksSnap.isEmpty) {
+                val b = firestore.batch()
+                blocksSnap.documents.forEach { b.delete(it.reference) }
+                b.commit().await()
+            }
+        }
+
+        // 2. Kendi arkadaşlık kayıtlarını sil (en iyi çaba)
+        runCatching {
+            val friendsSnap = firestore.collection("friendships")
+                .whereArrayContains("users", uid)
+                .limit(100)
+                .get()
+                .await()
+            if (!friendsSnap.isEmpty) {
+                val b = firestore.batch()
+                friendsSnap.documents.forEach { b.delete(it.reference) }
+                b.commit().await()
+            }
+        }
+
+        // 3. Grup üyeliklerini güncelle veya kurucusu olduğu grubu sil
+        runCatching {
+            val groupsSnap = firestore.collection("groups")
+                .whereArrayContains("memberIds", uid)
+                .limit(50)
+                .get()
+                .await()
+            for (doc in groupsSnap.documents) {
+                val ownerId = doc.getString("ownerId")
+                if (ownerId == uid) {
+                    doc.reference.delete().await()
+                } else {
+                    val memberIds = (doc.get("memberIds") as? List<*>)?.mapNotNull { it as? String }?.filter { it != uid } ?: emptyList()
+                    val roles = (doc.get("roles") as? Map<*, *>)?.entries
+                        ?.mapNotNull { (k, v) -> (k as? String)?.let { ks -> (v as? String)?.let { vs -> ks to vs } } }
+                        ?.toMap()
+                        ?.toMutableMap()
+                        ?.apply { remove(uid) }
+                        ?: emptyMap()
+                    doc.reference.update(
+                        mapOf(
+                            "memberIds" to memberIds,
+                            "roles" to roles,
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        )
+                    ).await()
+                }
+            }
+        }
+
+        // 4. Kullanıcı adı indeksini ve profili sil
+        runCatching {
+            val batch = firestore.batch()
+            if (!currentUsername.isNullOrBlank()) {
+                batch.delete(firestore.collection("usernames").document(currentUsername))
+            }
+            batch.delete(firestore.collection("users").document(uid))
+            batch.commit().await()
+        }
+
+        // 5. Firebase Auth kullanıcısını sil (diğer kişilerin sohbetlerindeki eski mesajlar sunucu kodu olmadan temizlenemez; Faz 3 için dokümante edilmiştir)
+        user.delete().await()
+        _authState.value = AccountAuthState.SignedOut
+        Unit
     }
 
     private suspend fun claimUsernameAndWriteProfile(

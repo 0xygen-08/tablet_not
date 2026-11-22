@@ -79,13 +79,12 @@ class FirestoreFriendsRepository @Inject constructor(
 
         friendshipsListener = firestore.collection("friendships")
             .whereArrayContains("users", myUid)
-            .orderBy("updatedAt", Query.Direction.DESCENDING)
             .limit(100)
             .addSnapshotListener { snapshot, error ->
                 if (error != null || snapshot == null) return@addSnapshotListener
-                _friendships.value = snapshot.documents.mapNotNull { doc ->
-                    doc.toFriendshipRecord(myUid)
-                }
+                _friendships.value = snapshot.documents
+                    .mapNotNull { doc -> doc.toFriendshipRecord(myUid) }
+                    .sortedByDescending { it.updatedAtMillis }
             }
 
         blocksListener = firestore.collection("blocks")

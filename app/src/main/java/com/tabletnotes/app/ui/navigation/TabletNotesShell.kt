@@ -128,7 +128,6 @@ fun TabletNotesShell(
     val authBusy by chatViewModel.authBusy.collectAsState()
     val authErrorRes by chatViewModel.authErrorRes.collectAsState()
     val authInfoRes by chatViewModel.authInfoRes.collectAsState()
-    val allContacts by chatViewModel.contacts.collectAsState()
     val defaultNoteTitlePrefix = stringResource(R.string.notes_default_title_format)
 
     BackHandler(enabled = showNearbyModal) {
@@ -275,7 +274,7 @@ fun TabletNotesShell(
                                 if (accountAuthState is AccountAuthState.SignedIn) {
                                     ChatScreen(
                                         viewModel = chatViewModel,
-                                        onOpenNoteInEditor = { noteId -> workspaceViewModel.openExistingNote(noteId) },
+                                        onOpenNearbyShare = { showNearbyModal = true },
                                         showGroupsOnly = false
                                     )
                                 } else {
@@ -292,7 +291,7 @@ fun TabletNotesShell(
                                 if (accountAuthState is AccountAuthState.SignedIn) {
                                     ChatScreen(
                                         viewModel = chatViewModel,
-                                        onOpenNoteInEditor = { noteId -> workspaceViewModel.openExistingNote(noteId) },
+                                        onOpenNearbyShare = { showNearbyModal = true },
                                         showGroupsOnly = true
                                     )
                                 } else {
@@ -469,56 +468,11 @@ fun TabletNotesShell(
 
                     HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
 
-                    LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(allContacts, key = { it.id }) { contact ->
-                            Surface(
-                                onClick = {
-                                    if (activeSummary != null) {
-                                        chatViewModel.sendNoteAttachment(
-                                            noteSummary = activeSummary,
-                                            targetContactId = contact.id
-                                        )
-                                    }
-                                    showShareFromEditorDialog = false
-                                    workspaceViewModel.closeEditorAndSaveImmediately()
-                                    selectedTab = if (contact.isGroup) {
-                                        TopTabDestination.GROUPS_CHAT
-                                    } else {
-                                        TopTabDestination.FRIENDS_CHAT
-                                    }
-                                },
-                                shape = RoundedCornerShape(14.dp),
-                                color = palette.surface,
-                                border = BorderStroke(1.dp, palette.borderSubtle),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text(
-                                        text = contact.displayName,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = palette.textPrimary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.Send,
-                                        contentDescription = null,
-                                        tint = palette.primaryAccent,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
+                    Text(
+                        text = stringResource(R.string.chat_editor_share_text_only_note),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.textMuted
+                    )
                 }
             },
             confirmButton = {

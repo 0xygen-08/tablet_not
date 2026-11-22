@@ -270,4 +270,66 @@
     <string name="report_submitted_notice">Report submitted ✓</string>
     <string name="chat_error_message_too_long">Messages cannot exceed 2000 characters.</string>
     <string name="group_error_member_limit">Groups can have at most 50 members.</string>
+
+    <!-- Phase 2 M4 & M5: Realtime Direct Chat, Groups & Roles -->
+    <string name="chat_offline_banner">Offline Mode — Showing locally cached messages and chats.</string>
+    <string name="chat_load_older_btn">Load Older Messages</string>
+    <string name="chat_loading_older">Loading older messages…</string>
+    <string name="chat_date_today">Today</string>
+    <string name="chat_date_yesterday">Yesterday</string>
+    <string name="chat_msg_status_sending">Sending…</string>
+    <string name="chat_msg_status_failed">Failed • Retry</string>
+    <string name="chat_msg_delete">Delete</string>
+    <string name="chat_msg_report">Report</string>
+    <string name="chat_attach_coming_soon_title">Note Sharing Coming Soon (Phase 3)</string>
+    <string name="chat_attach_coming_soon_body">In Phase 2 (Spark Plan), chats are text-only and note files are not uploaded through the server. You can continue sharing notes offline via Nearby Sharing.</string>
+    <string name="chat_attach_go_nearby">Open Nearby Sharing</string>
+    <string name="chat_empty_friends_list">No friends yet. Tap the + button at bottom right to search by @username or scan a QR code.</string>
+    <string name="chat_empty_groups_list">No study groups yet. Tap the + button at bottom right to create one.</string>
+    <string name="chat_empty_messages">No messages yet. Say hello below.</string>
+    <string name="chat_menu_add_friend_qr">Add Friend (\@name / QR)</string>
+    <string name="chat_menu_requests_blocks">Requests &amp; Blocked</string>
+    <string name="chat_menu_requests_blocks_fmt">Requests &amp; Blocked (%1$d)</string>
+    <string name="chat_menu_new_group">Create New Group</string>
+    <string name="chat_direct_tap_to_start">Tap to start chatting</string>
+    <string name="chat_peer_badge_verified">Spark • Text-Only Chat</string>
+    <string name="chat_composer_text_only_hint">Type a message (max 2000 characters)…</string>
+    <string name="chat_char_counter_fmt">%1$d / 2000</string>
+    <string name="chat_editor_share_text_only_note">Server note file sharing will arrive in Phase 3. Offline Nearby Sharing is available right now.</string>
+
+    <!-- Phase 2 M5: Study Groups -->
+    <string name="group_create_title">Create Study Group</string>
+    <string name="group_name_label">Group Name</string>
+    <string name="group_desc_label">Description (Optional)</string>
+    <string name="group_pick_members_fmt">Select Members (%1$d / 50)</string>
+    <string name="group_no_friends_to_add">No other friends available to add.</string>
+    <string name="group_create_btn">Create Group</string>
+    <string name="group_settings_title">Group Settings &amp; Members</string>
+    <string name="group_settings_btn">Group Settings</string>
+    <string name="group_who_can_send_label">Who Can Send Messages?</string>
+    <string name="group_send_everyone">Everyone</string>
+    <string name="group_send_admins_only">Admins Only</string>
+    <string name="group_admins_only_composer_notice">Only owners and admins can send messages in this group.</string>
+    <string name="group_mute_local_label">Mute Notifications (On This Device Only)</string>
+    <string name="group_muted_badge">Muted</string>
+    <string name="group_save_settings_btn">Save Settings</string>
+    <string name="group_add_members_btn">Add Members</string>
+    <string name="group_members_header_fmt">Members (%1$d / 50)</string>
+    <string name="group_role_owner">Owner</string>
+    <string name="group_role_admin">Admin</string>
+    <string name="group_role_member">Member</string>
+    <string name="group_make_admin">Make Admin</string>
+    <string name="group_remove_admin">Demote Admin</string>
+    <string name="group_remove_member">Remove</string>
+    <string name="group_leave_btn">Leave Group</string>
+    <string name="group_delete_btn">Delete Group Permanently</string>
+    <string name="group_delete_confirm_msg">Are you sure you want to delete this group and its history for everyone?</string>
+    <string name="group_members_count_fmt">%1$d members</string>
+
+    <!-- Phase 2 M6: Delete Account -->
+    <string name="auth_delete_account_btn">Delete My Account Permanently</string>
+    <string name="auth_delete_account_title">Delete Account</string>
+    <string name="auth_delete_account_desc">This deletes your profile, @username, friendships, and auth account (due to no server code, old messages in other chats remain until Phase 3). Local tablet notes remain untouched.</string>
+    <string name="auth_delete_password_confirm_label">Enter Password to Re-Authenticate</string>
+    <string name="auth_delete_confirm_cta">Delete Permanently</string>
 </resources>
