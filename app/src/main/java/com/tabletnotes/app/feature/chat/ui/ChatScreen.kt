@@ -90,6 +90,8 @@ import com.tabletnotes.app.feature.chat.auth.UserAvatarBadge
 import com.tabletnotes.app.feature.chat.friends.AddFriendAndQrDialog
 import com.tabletnotes.app.feature.chat.friends.FriendRequestsAndBlocksDialog
 import com.tabletnotes.app.feature.chat.friends.ReportDialog
+import com.tabletnotes.app.feature.chat.groups.CreateGroupDialog
+import com.tabletnotes.app.feature.chat.groups.GroupSettingsDialog
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -128,6 +130,7 @@ fun ChatScreen(
     val chatNoticeRes by viewModel.chatNoticeRes.collectAsState()
 
     val friendships by viewModel.friendships.collectAsState()
+    val acceptedFriends by viewModel.acceptedFriends.collectAsState()
     val incomingRequests by viewModel.incomingFriendRequests.collectAsState()
     val outgoingRequests by viewModel.outgoingFriendRequests.collectAsState()
     val blockedUsers by viewModel.blockedUsers.collectAsState()
@@ -135,12 +138,15 @@ fun ChatScreen(
     val friendBusy by viewModel.friendBusy.collectAsState()
     val friendErrorRes by viewModel.friendErrorRes.collectAsState()
     val friendInfoRes by viewModel.friendInfoRes.collectAsState()
+    val groupBusy by viewModel.groupBusy.collectAsState()
+    val groupErrorRes by viewModel.groupErrorRes.collectAsState()
 
     var showFabMenu by remember { mutableStateOf(false) }
     var showAddFriendDialog by rememberSaveable { mutableStateOf(false) }
     var showRequestsDialog by rememberSaveable { mutableStateOf(false) }
     var showAttachComingSoonDialog by rememberSaveable { mutableStateOf(false) }
-    var showCreateGroupComingSoonNotice by rememberSaveable { mutableStateOf(false) }
+    var showCreateGroupDialog by rememberSaveable { mutableStateOf(false) }
+    var activeGroupSettingsId by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingReport by remember { mutableStateOf<ReportRequest?>(null) }
     var composerText by rememberSaveable(activeTarget) { mutableStateOf("") }
 
@@ -229,7 +235,8 @@ fun ChatScreen(
                             showAddFriendDialog = true
                         },
                         onOpenCreateGroup = {
-                            showCreateGroupComingSoonNotice = true
+                            viewModel.clearGroupError()
+                            showCreateGroupDialog = true
                         }
                     )
                 }
@@ -263,7 +270,10 @@ fun ChatScreen(
                         onUnfriend = { peerUid -> viewModel.rejectCancelOrUnfriend(peerUid) },
                         onBlockUser = { peer -> viewModel.blockUser(peer) },
                         onAttachNoteClick = { showAttachComingSoonDialog = true },
-                        onOpenGroupSettings = {},
+                        onOpenGroupSettings = { grp ->
+                            viewModel.clearGroupError()
+                            activeGroupSettingsId = grp.groupId
+                        },
                         onToggleGroupMute = { gid -> viewModel.toggleGroupMute(gid) },
                         onDismissNotice = { viewModel.dismissChatNotice() },
                         showBackButton = false,
@@ -293,7 +303,8 @@ fun ChatScreen(
                             showAddFriendDialog = true
                         },
                         onOpenCreateGroup = {
-                            showCreateGroupComingSoonNotice = true
+                            viewModel.clearGroupError()
+                            showCreateGroupDialog = true
                         }
                     )
                 }
@@ -325,7 +336,10 @@ fun ChatScreen(
                         onUnfriend = { peerUid -> viewModel.rejectCancelOrUnfriend(peerUid) },
                         onBlockUser = { peer -> viewModel.blockUser(peer) },
                         onAttachNoteClick = { showAttachComingSoonDialog = true },
-                        onOpenGroupSettings = {},
+                        onOpenGroupSettings = { grp ->
+                            viewModel.clearGroupError()
+                            activeGroupSettingsId = grp.groupId
+                        },
                         onToggleGroupMute = { gid -> viewModel.toggleGroupMute(gid) },
                         onDismissNotice = { viewModel.dismissChatNotice() },
                         showBackButton = true,
@@ -430,18 +444,52 @@ fun ChatScreen(
         )
     }
 
-    if (showCreateGroupComingSoonNotice) {
-        AlertDialog(
-            onDismissRequest = { showCreateGroupComingSoonNotice = false },
-            shape = RoundedCornerShape(24.dp),
-            containerColor = palette.surfaceElevated,
-            title = { Text(stringResource(R.string.group_create_title)) },
-            text = { Text(stringResource(R.string.chat_empty_groups_list)) },
-            confirmButton = {
-                TextButton(onClick = { showCreateGroupComingSoonNotice = false }) {
-                    Text(stringResource(R.string.editor_json_debug_close))
+    if (showCreateGroupDialog) {
+        CreateGroupDialog(
+            friends = acceptedFriends,
+            isBusy = groupBusy,
+            errorMessageRes = groupErrorRes,
+            onCreateGroup = { name, desc, avatarPreset, members ->
+                viewModel.createGroup(name, desc, avatarPreset, members) {
+                    showCreateGroupDialog = false
                 }
-            }
+            },
+            onDismiss = { showCreateGroupDialog = false }
+        )
+    }
+
+    val targetGroupForSettings = groupItems.firstOrNull { it.groupId == activeGroupSettingsId }
+    if (targetGroupForSettings != null) {
+        GroupSettingsDialog(
+            group = targetGroupForSettings,
+            myUid = signedInProfile.uid,
+            allFriends = acceptedFriends,
+            isBusy = groupBusy,
+            errorMessageRes = groupErrorRes,
+            onSaveSettings = { name, desc, avatarPreset, whoCanSend ->
+                viewModel.updateGroupSettings(targetGroupForSettings.groupId, name, desc, avatarPreset, whoCanSend)
+            },
+            onAddMembers = { newMembers ->
+                viewModel.addGroupMembers(targetGroupForSettings.groupId, newMembers)
+            },
+            onRemoveMember = { targetUid ->
+                viewModel.removeGroupMember(targetGroupForSettings.groupId, targetUid)
+            },
+            onSetRole = { targetUid, newRole ->
+                viewModel.setGroupMemberRole(targetGroupForSettings.groupId, targetUid, newRole)
+            },
+            onToggleMute = { viewModel.toggleGroupMute(targetGroupForSettings.groupId) },
+            onLeaveGroup = {
+                viewModel.leaveGroup(targetGroupForSettings.groupId) {
+                    activeGroupSettingsId = null
+                }
+            },
+            onDeleteGroup = {
+                viewModel.deleteGroup(targetGroupForSettings.groupId) {
+                    activeGroupSettingsId = null
+                }
+            },
+            onDismiss = { activeGroupSettingsId = null }
         )
     }
 }

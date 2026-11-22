@@ -602,7 +602,7 @@ private fun ProfileEditorSection(
 }
 
 @Composable
-private fun AvatarPresetSelector(
+internal fun AvatarPresetSelector(
     displayName: String,
     selectedAvatarId: String,
     onSelect: (String) -> Unit
