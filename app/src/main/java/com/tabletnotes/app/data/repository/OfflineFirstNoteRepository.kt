@@ -17,6 +17,7 @@ import com.tabletnotes.app.domain.model.NoteStroke
 import com.tabletnotes.app.domain.model.PaperColor
 import com.tabletnotes.app.domain.model.PaperTemplate
 import com.tabletnotes.app.domain.model.StrokePoint
+import com.tabletnotes.app.domain.model.TagNormalizer
 import com.tabletnotes.app.domain.model.TextBlock
 import com.tabletnotes.app.domain.repository.NoteRepository
 import com.tabletnotes.app.domain.repository.NoteSummary
@@ -45,6 +46,12 @@ class OfflineFirstNoteRepository @Inject constructor(
         }
     }
 
+    override fun observeTrashedNoteSummaries(): Flow<List<NoteSummary>> {
+        return noteDao.observeTrashedNotes().map { list ->
+            list.map { it.toSummary() }
+        }
+    }
+
     override suspend fun loadNoteDocument(noteId: String): NoteDocument? =
         withContext(ioDispatcher) {
             runCatching {
@@ -55,6 +62,7 @@ class OfflineFirstNoteRepository @Inject constructor(
 
     override suspend fun saveNoteDocumentAtomically(document: NoteDocument): NoteSummary =
         withContext(ioDispatcher + NonCancellable) {
+            val existingRow = noteDao.getNoteById(document.id)
             val binaryBytes = NoteBinaryCodec.encode(document, compress = true)
             val noteFile = fileStore.writeNoteBytesAtomically(document.id, binaryBytes)
 
@@ -68,7 +76,12 @@ class OfflineFirstNoteRepository @Inject constructor(
                 fileSizeBytes = binaryBytes.size.toLong(),
                 createdAtMillis = document.createdAtMillis,
                 updatedAtMillis = document.updatedAtMillis,
-                courseName = document.courseName
+                courseName = document.courseName,
+                isFavorite = document.isFavorite,
+                isPinned = document.isPinned,
+                tagsCsv = TagNormalizer.toCsv(document.tags),
+                isTrashed = existingRow?.isTrashed ?: false,
+                trashedAtMillis = existingRow?.trashedAtMillis
             )
             noteDao.upsertNote(initialEntity)
 
@@ -86,10 +99,61 @@ class OfflineFirstNoteRepository @Inject constructor(
             }
         }
 
-    override suspend fun deleteNote(noteId: String) = withContext(ioDispatcher) {
+    override suspend fun updateNoteFlagsAndTags(
+        noteId: String,
+        isFavorite: Boolean,
+        isPinned: Boolean,
+        tags: List<String>
+    ) = withContext(ioDispatcher + NonCancellable) {
+        val cleanTags = tags.map { TagNormalizer.normalize(it) }.filter { it.isNotEmpty() }.distinct()
+        noteDao.updateFlagsAndTags(noteId, isFavorite, isPinned, TagNormalizer.toCsv(cleanTags))
+        val doc = loadNoteDocument(noteId)
+        if (doc != null) {
+            val updatedDoc = doc.copy(
+                isFavorite = isFavorite,
+                isPinned = isPinned,
+                tags = cleanTags
+            )
+            val bytes = NoteBinaryCodec.encode(updatedDoc, compress = true)
+            fileStore.writeNoteBytesAtomically(noteId, bytes)
+        }
+    }
+
+    override suspend fun moveNoteToTrash(noteId: String) = withContext(ioDispatcher + NonCancellable) {
+        noteDao.moveToTrash(noteId, System.currentTimeMillis())
+    }
+
+    override suspend fun restoreNoteFromTrash(noteId: String) = withContext(ioDispatcher + NonCancellable) {
+        noteDao.restoreFromTrash(noteId)
+    }
+
+    override suspend fun permanentlyDeleteNote(noteId: String) = withContext(ioDispatcher + NonCancellable) {
         noteDao.deleteNoteById(noteId)
         fileStore.deleteNoteFiles(noteId)
     }
+
+    override suspend fun emptyTrash() = withContext(ioDispatcher + NonCancellable) {
+        val trashed = noteDao.getTrashedNotesOnce()
+        for (entity in trashed) {
+            noteDao.deleteNoteById(entity.id)
+            fileStore.deleteNoteFiles(entity.id)
+        }
+    }
+
+    override suspend fun purgeExpiredTrashedNotes(retentionDays: Int) =
+        withContext(ioDispatcher + NonCancellable) {
+            val cutoff = System.currentTimeMillis() - (retentionDays.toLong() * 86_400_000L)
+            val trashed = noteDao.getTrashedNotesOnce()
+            for (entity in trashed) {
+                val trashedAt = entity.trashedAtMillis ?: continue
+                if (trashedAt <= cutoff) {
+                    noteDao.deleteNoteById(entity.id)
+                    fileStore.deleteNoteFiles(entity.id)
+                }
+            }
+        }
+
+    override suspend fun deleteNote(noteId: String) = moveNoteToTrash(noteId)
 
     override suspend fun ensureSampleNotesSeeded() = withContext(ioDispatcher) {
         val existing = noteDao.getAllNotesOnce()
@@ -433,7 +497,12 @@ class OfflineFirstNoteRepository @Inject constructor(
         fileSizeBytes = fileSizeBytes,
         createdAtMillis = createdAtMillis,
         updatedAtMillis = updatedAtMillis,
-        courseName = courseName
+        courseName = courseName,
+        isFavorite = isFavorite,
+        isPinned = isPinned,
+        tags = TagNormalizer.parseCsv(tagsCsv),
+        isTrashed = isTrashed,
+        trashedAtMillis = trashedAtMillis
     )
 }
 

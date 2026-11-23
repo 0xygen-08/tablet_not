@@ -1,21 +1,27 @@
 package com.tabletnotes.app.feature.editor.ui
 
 import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.tabletnotes.app.R
 import com.tabletnotes.app.core.designsystem.theme.ThemePreset
+import com.tabletnotes.app.core.storage.AtomicNoteFileStore
 import com.tabletnotes.app.core.storage.LowStorageException
 import com.tabletnotes.app.domain.model.NoteDocument
 import com.tabletnotes.app.domain.model.NotePage
 import com.tabletnotes.app.domain.model.PaperColor
 import com.tabletnotes.app.domain.model.PaperTemplate
+import com.tabletnotes.app.domain.model.StylusButtonAction
 import com.tabletnotes.app.domain.repository.NoteRepository
 import com.tabletnotes.app.domain.repository.NoteSummary
 import com.tabletnotes.app.feature.format.json.NoteJsonCodec
+import com.tabletnotes.app.feature.format.pdf.NotePdfPortability
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.UUID
 import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
@@ -36,11 +42,12 @@ sealed interface AutosaveStatus {
 
 @HiltViewModel
 class NotesWorkspaceViewModel @Inject constructor(
-    @ApplicationContext context: Context,
-    private val noteRepository: NoteRepository
+    @ApplicationContext private val appContext: Context,
+    private val noteRepository: NoteRepository,
+    private val fileStore: AtomicNoteFileStore
 ) : ViewModel() {
 
-    private val prefs = context.getSharedPreferences("tablet_notes_state", Context.MODE_PRIVATE)
+    private val prefs = appContext.getSharedPreferences("tablet_notes_state", Context.MODE_PRIVATE)
 
     val noteSummaries: StateFlow<List<NoteSummary>> = noteRepository
         .observeNoteSummaries()
@@ -50,8 +57,19 @@ class NotesWorkspaceViewModel @Inject constructor(
             initialValue = emptyList()
         )
 
+    val trashedNotes: StateFlow<List<NoteSummary>> = noteRepository
+        .observeTrashedNoteSummaries()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = emptyList()
+        )
+
     private val _customCourses = MutableStateFlow(loadSavedCourses())
     val customCourses: StateFlow<List<String>> = _customCourses.asStateFlow()
+
+    private val _pinnedCourses = MutableStateFlow(loadPinnedCourses())
+    val pinnedCourses: StateFlow<Set<String>> = _pinnedCourses.asStateFlow()
 
     private val _selectedCourseFilter = MutableStateFlow<String?>(
         prefs.getString(KEY_SELECTED_COURSE, "Fizik")
@@ -64,6 +82,12 @@ class NotesWorkspaceViewModel @Inject constructor(
     private val _autosaveStatus = MutableStateFlow<AutosaveStatus>(AutosaveStatus.Idle)
     val autosaveStatus: StateFlow<AutosaveStatus> = _autosaveStatus.asStateFlow()
 
+    private val _workspaceNoticeRes = MutableStateFlow<Int?>(null)
+    val workspaceNoticeRes: StateFlow<Int?> = _workspaceNoticeRes.asStateFlow()
+
+    private val _isPortabilityBusy = MutableStateFlow(false)
+    val isPortabilityBusy: StateFlow<Boolean> = _isPortabilityBusy.asStateFlow()
+
     val editorController = NoteEditorController(
         onContentMutated = {
             saveFavoriteColorsToPrefs()
@@ -75,8 +99,10 @@ class NotesWorkspaceViewModel @Inject constructor(
 
     init {
         restoreFavoriteColorsFromPrefs()
+        editorController.stylusSideButtonAction = loadStylusButtonAction()
         viewModelScope.launch {
             noteRepository.ensureSampleNotesSeeded()
+            noteRepository.purgeExpiredTrashedNotes(retentionDays = 30)
 
             // Uygulama en son açık notla kapandıysa doğrudan o nottan devam et
             val wasEditorOpen = prefs.getBoolean(KEY_LAST_EDITOR_OPEN, false)
@@ -95,6 +121,10 @@ class NotesWorkspaceViewModel @Inject constructor(
         }
     }
 
+    fun dismissWorkspaceNotice() {
+        _workspaceNoticeRes.value = null
+    }
+
     fun getSavedThemePreset(): ThemePreset {
         val raw = prefs.getString(KEY_THEME_PRESET, ThemePreset.NIGHT_DARK.name)
         return runCatching { ThemePreset.valueOf(raw ?: "") }.getOrDefault(ThemePreset.NIGHT_DARK)
@@ -104,9 +134,26 @@ class NotesWorkspaceViewModel @Inject constructor(
         prefs.edit().putString(KEY_THEME_PRESET, preset.name).apply()
     }
 
+    fun setStylusSideButtonAction(action: StylusButtonAction) {
+        editorController.stylusSideButtonAction = action
+        prefs.edit().putInt(KEY_STYLUS_BUTTON_ACTION, action.wireId).apply()
+    }
+
     fun selectCourseFolder(courseName: String?) {
         _selectedCourseFilter.value = courseName
         prefs.edit().putString(KEY_SELECTED_COURSE, courseName).apply()
+    }
+
+    fun toggleCoursePinned(courseName: String) {
+        val current = _pinnedCourses.value.toMutableSet()
+        val existingMatch = current.firstOrNull { it.equals(courseName, ignoreCase = true) }
+        if (existingMatch != null) {
+            current.remove(existingMatch)
+        } else {
+            current.add(courseName)
+        }
+        _pinnedCourses.value = current
+        prefs.edit().putStringSet(KEY_PINNED_COURSES, current).apply()
     }
 
     fun addCourseFolder(newCourseName: String) {
@@ -126,32 +173,41 @@ class NotesWorkspaceViewModel @Inject constructor(
         _customCourses.value = updated
         saveCoursesToPrefs(updated)
 
+        if (_pinnedCourses.value.any { it.equals(courseName, ignoreCase = true) }) {
+            val nextPinned = _pinnedCourses.value.filterNot { it.equals(courseName, ignoreCase = true) }.toSet()
+            _pinnedCourses.value = nextPinned
+            prefs.edit().putStringSet(KEY_PINNED_COURSES, nextPinned).apply()
+        }
+
         if (_selectedCourseFilter.value.equals(courseName, ignoreCase = true)) {
             selectCourseFolder(updated.firstOrNull())
         }
 
-        // Bu klasörün içindeki tüm alt notları da temizle
+        // Bu klasörün içindeki tüm alt notları kalıcı silmek yerine Çöp Kutusuna taşı
         viewModelScope.launch(NonCancellable) {
-            val toDelete = noteSummaries.value.filter { it.courseName.equals(courseName, ignoreCase = true) }
-            for (note in toDelete) {
+            val toTrash = noteSummaries.value.filter { it.courseName.equals(courseName, ignoreCase = true) }
+            for (note in toTrash) {
                 if (_isEditorOpen.value && editorController.noteId == note.id) {
                     _isEditorOpen.value = false
                     persistLastOpenEditorState(isOpen = false, noteId = null)
                 }
-                noteRepository.deleteNote(note.id)
+                noteRepository.moveNoteToTrash(note.id)
+            }
+            if (toTrash.isNotEmpty()) {
+                _workspaceNoticeRes.value = R.string.trash_moved_notice
             }
         }
     }
 
     /**
-     * Kullanıcı bir ders klasörüne tıkladığında en son değişiklik yaptığı alt nottan doğrudan başlar;
-     * klasör boşsa ilk alt notu oluşturup açar.
+     * Kullanıcı bir ders klasörüne tıkladığında en son değişiklik yaptığı (veya sabitlenmiş) alt nottan
+     * doğrudan başlar; klasör boşsa ilk alt notu oluşturup açar.
      */
     fun openCourseFolder(courseName: String, defaultTitlePrefix: String) {
         selectCourseFolder(courseName)
         val notesInCourse = noteSummaries.value
             .filter { it.courseName.equals(courseName, ignoreCase = true) }
-            .sortedByDescending { it.updatedAtMillis }
+            .sortedWith(compareByDescending<NoteSummary> { it.isPinned }.thenByDescending { it.updatedAtMillis })
 
         val mostRecent = notesInCourse.firstOrNull()
         if (mostRecent != null) {
@@ -209,6 +265,36 @@ class NotesWorkspaceViewModel @Inject constructor(
         }
     }
 
+    fun toggleNoteFavorite(summary: NoteSummary) {
+        val nextFav = !summary.isFavorite
+        if (_isEditorOpen.value && editorController.noteId == summary.id && editorController.isFavorite != nextFav) {
+            editorController.toggleFavorite()
+        }
+        viewModelScope.launch(NonCancellable) {
+            noteRepository.updateNoteFlagsAndTags(
+                noteId = summary.id,
+                isFavorite = nextFav,
+                isPinned = summary.isPinned,
+                tags = summary.tags
+            )
+        }
+    }
+
+    fun toggleNotePinned(summary: NoteSummary) {
+        val nextPin = !summary.isPinned
+        if (_isEditorOpen.value && editorController.noteId == summary.id && editorController.isPinned != nextPin) {
+            editorController.togglePinned()
+        }
+        viewModelScope.launch(NonCancellable) {
+            noteRepository.updateNoteFlagsAndTags(
+                noteId = summary.id,
+                isFavorite = summary.isFavorite,
+                isPinned = nextPin,
+                tags = summary.tags
+            )
+        }
+    }
+
     fun closeEditorAndSaveImmediately() {
         autosaveJob?.cancel()
         saveFavoriteColorsToPrefs()
@@ -256,9 +342,13 @@ class NotesWorkspaceViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Notu doğrudan silmek yerine 30 günlük Çöp Kutusuna taşır.
+     */
     fun deleteNote(noteId: String) {
         viewModelScope.launch(NonCancellable) {
-            noteRepository.deleteNote(noteId)
+            noteRepository.moveNoteToTrash(noteId)
+            _workspaceNoticeRes.value = R.string.trash_moved_notice
             if (_isEditorOpen.value && editorController.noteId == noteId) {
                 val replacement = noteSummaries.value
                     .filterNot { it.id == noteId }
@@ -269,6 +359,178 @@ class NotesWorkspaceViewModel @Inject constructor(
                     _isEditorOpen.value = false
                     persistLastOpenEditorState(isOpen = false, noteId = null)
                 }
+            }
+        }
+    }
+
+    fun restoreNoteFromTrash(summary: NoteSummary) {
+        viewModelScope.launch(NonCancellable) {
+            noteRepository.restoreNoteFromTrash(summary.id)
+            addCourseFolder(summary.courseName)
+            _workspaceNoticeRes.value = R.string.trash_restored_notice
+        }
+    }
+
+    fun permanentlyDeleteNote(noteId: String) {
+        viewModelScope.launch(NonCancellable) {
+            noteRepository.permanentlyDeleteNote(noteId)
+        }
+    }
+
+    fun emptyTrash() {
+        viewModelScope.launch(NonCancellable) {
+            noteRepository.emptyTrash()
+        }
+    }
+
+    // --- GALERİ GÖRSELİ, PDF İÇE AKTARMA VE PDF/PNG DIŞA AKTARMA ---
+
+    fun importGalleryImageIntoActiveNote(uri: Uri) {
+        val currentNoteId = editorController.noteId
+        val targetPage = editorController.getCurrentVisiblePageIndex()
+        viewModelScope.launch {
+            _isPortabilityBusy.value = true
+            val imported = withContext(Dispatchers.IO) {
+                runCatching {
+                    NotePdfPortability.importGalleryImageToAsset(
+                        context = appContext,
+                        imageUri = uri,
+                        noteId = currentNoteId,
+                        fileStore = fileStore
+                    )
+                }.getOrNull()
+            }
+            _isPortabilityBusy.value = false
+            if (imported != null) {
+                val (filePath, aspectRatio) = imported
+                editorController.addImageBlock(
+                    filePath = filePath,
+                    aspectRatio = aspectRatio,
+                    targetPageIndex = targetPage
+                )
+                _workspaceNoticeRes.value = R.string.portability_image_added_notice
+            } else {
+                _workspaceNoticeRes.value = R.string.portability_operation_failed
+            }
+        }
+    }
+
+    fun importPdfAsNewNote(uri: Uri, targetCourse: String? = null) {
+        viewModelScope.launch {
+            if (_isEditorOpen.value) {
+                performImmediateAutosave()
+            }
+            _isPortabilityBusy.value = true
+            val newNoteId = "note_${UUID.randomUUID().toString().take(8)}"
+            val course = (targetCourse ?: _selectedCourseFilter.value ?: "Fizik").ifBlank { "Fizik" }
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val title = NotePdfPortability.resolveDisplayName(appContext, uri)
+                    val importedPages = NotePdfPortability.importPdfToPageAssets(
+                        context = appContext,
+                        pdfUri = uri,
+                        noteId = newNoteId,
+                        fileStore = fileStore,
+                        startingPageIndex = 0
+                    )
+                    if (importedPages.isEmpty()) error("Empty PDF")
+                    title to importedPages
+                }
+            }
+            _isPortabilityBusy.value = false
+
+            result.onSuccess { (title, importedPages) ->
+                val now = System.currentTimeMillis()
+                addCourseFolder(course)
+                val newDoc = NoteDocument(
+                    id = newNoteId,
+                    title = title,
+                    courseName = course,
+                    paperColor = PaperColor.WHITE,
+                    paperTemplate = PaperTemplate.BLANK,
+                    pages = importedPages,
+                    strokes = emptyList(),
+                    textBlocks = emptyList(),
+                    createdAtMillis = now,
+                    updatedAtMillis = now
+                )
+                editorController.loadDocument(newDoc)
+                _isEditorOpen.value = true
+                persistLastOpenEditorState(isOpen = true, noteId = newDoc.id)
+                performImmediateAutosave()
+                _workspaceNoticeRes.value = R.string.portability_pdf_imported_notice
+            }.onFailure {
+                _workspaceNoticeRes.value = R.string.portability_operation_failed
+            }
+        }
+    }
+
+    fun appendPdfPagesToActiveNote(uri: Uri) {
+        val currentNoteId = editorController.noteId
+        val startIndex = editorController.pages.size
+        viewModelScope.launch {
+            _isPortabilityBusy.value = true
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val importedPages = NotePdfPortability.importPdfToPageAssets(
+                        context = appContext,
+                        pdfUri = uri,
+                        noteId = currentNoteId,
+                        fileStore = fileStore,
+                        startingPageIndex = startIndex
+                    )
+                    if (importedPages.isEmpty()) error("Empty PDF")
+                    importedPages
+                }
+            }
+            _isPortabilityBusy.value = false
+
+            result.onSuccess { importedPages ->
+                editorController.appendPages(importedPages, scrollToFirstNew = true)
+                _workspaceNoticeRes.value = R.string.portability_pdf_imported_notice
+            }.onFailure {
+                _workspaceNoticeRes.value = R.string.portability_operation_failed
+            }
+        }
+    }
+
+    fun exportActiveNoteToPdf(uri: Uri) {
+        val snapshot = editorController.toNoteDocument()
+        viewModelScope.launch {
+            _isPortabilityBusy.value = true
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    appContext.contentResolver.openOutputStream(uri)?.use { out ->
+                        NotePdfPortability.exportNoteToPdf(snapshot, out)
+                    } ?: error("Cannot open output stream")
+                }.isSuccess
+            }
+            _isPortabilityBusy.value = false
+            _workspaceNoticeRes.value = if (ok) {
+                R.string.portability_export_pdf_success
+            } else {
+                R.string.portability_operation_failed
+            }
+        }
+    }
+
+    fun exportCurrentPageToPng(uri: Uri) {
+        val snapshot = editorController.toNoteDocument()
+        val pageIndex = editorController.getCurrentVisiblePageIndex()
+        viewModelScope.launch {
+            _isPortabilityBusy.value = true
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    appContext.contentResolver.openOutputStream(uri)?.use { out ->
+                        NotePdfPortability.exportPageToPng(snapshot, pageIndex, out)
+                    } ?: error("Cannot open output stream")
+                }.isSuccess
+            }
+            _isPortabilityBusy.value = false
+            _workspaceNoticeRes.value = if (ok) {
+                R.string.portability_export_png_success
+            } else {
+                R.string.portability_operation_failed
             }
         }
     }
@@ -310,6 +572,12 @@ class NotesWorkspaceViewModel @Inject constructor(
         return stored.split("|").map { it.trim() }.filter { it.isNotEmpty() }
     }
 
+    private fun loadPinnedCourses(): Set<String> =
+        prefs.getStringSet(KEY_PINNED_COURSES, emptySet())?.toSet() ?: emptySet()
+
+    private fun loadStylusButtonAction(): StylusButtonAction =
+        StylusButtonAction.fromWireId(prefs.getInt(KEY_STYLUS_BUTTON_ACTION, StylusButtonAction.ERASER.wireId))
+
     private fun saveCoursesToPrefs(courses: List<String>) {
         prefs.edit().putString(KEY_COURSES_ORDERED, courses.joinToString("|")).apply()
     }
@@ -350,8 +618,10 @@ class NotesWorkspaceViewModel @Inject constructor(
 
     companion object {
         private const val KEY_COURSES_ORDERED = "saved_courses_ordered"
+        private const val KEY_PINNED_COURSES = "saved_pinned_courses"
         private const val KEY_SELECTED_COURSE = "saved_selected_course"
         private const val KEY_THEME_PRESET = "saved_theme_preset"
+        private const val KEY_STYLUS_BUTTON_ACTION = "stylus_side_button_action"
         private const val KEY_LAST_EDITOR_OPEN = "last_editor_open"
         private const val KEY_LAST_OPEN_NOTE_ID = "last_open_note_id"
         private const val KEY_FAV_COLOR_0 = "fav_color_0"

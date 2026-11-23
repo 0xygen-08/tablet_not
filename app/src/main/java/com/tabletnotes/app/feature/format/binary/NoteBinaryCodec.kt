@@ -2,11 +2,13 @@ package com.tabletnotes.app.feature.format.binary
 
 import com.tabletnotes.app.domain.model.DrawingToolType
 import com.tabletnotes.app.domain.model.NoteDocument
+import com.tabletnotes.app.domain.model.NoteImageBlock
 import com.tabletnotes.app.domain.model.NotePage
 import com.tabletnotes.app.domain.model.NoteStroke
 import com.tabletnotes.app.domain.model.PaperColor
 import com.tabletnotes.app.domain.model.PaperTemplate
 import com.tabletnotes.app.domain.model.StrokePoint
+import com.tabletnotes.app.domain.model.TagNormalizer
 import com.tabletnotes.app.domain.model.TextBlock
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -51,6 +53,7 @@ object NoteBinaryCodec {
     private const val THICKNESS_SCALE = 100f   // 0.01f hassasiyet
     private const val PRESSURE_SCALE = 1000f   // 0..1000 (10-bit) kuantizasyon
     private const val ANGLE_SCALE = 1000f      // miliradyan hassasiyet
+    private const val EXT_META_MARKER = 0x7E   // Geriye uyumlu ek alan başlangıç işareti
 
     /**
      * [NoteDocument] nesnesini `.tnote` binary bayt dizisine kodlar.
@@ -187,6 +190,33 @@ object NoteBinaryCodec {
         writeString(out, doc.courseName)
         out.writeByte(doc.paperColor.wireId)
         out.writeByte(doc.paperTemplate.wireId)
+
+        // Genişletilmiş Üst Veri Bloğu (Favori, Sabit, Etiketler, Sayfa PDF Arka Planları, Görseller)
+        out.writeByte(EXT_META_MARKER)
+        val flags = (if (doc.isFavorite) 1 else 0) or (if (doc.isPinned) 2 else 0)
+        out.writeByte(flags)
+
+        val cleanTags = doc.tags.map { TagNormalizer.normalize(it) }.filter { it.isNotEmpty() }.distinct()
+        writeUVarInt(out, cleanTags.size)
+        for (tag in cleanTags) {
+            writeString(out, tag)
+        }
+
+        writeUVarInt(out, doc.pages.size)
+        for (page in doc.pages) {
+            writeString(out, page.backgroundImagePath ?: "")
+        }
+
+        writeUVarInt(out, doc.images.size)
+        for (img in doc.images) {
+            writeString(out, img.id)
+            writeUVarInt(out, img.pageIndex.coerceAtLeast(0))
+            writeZigZagVarInt(out, (img.x * COORD_SCALE).roundToInt())
+            writeZigZagVarInt(out, (img.y * COORD_SCALE).roundToInt())
+            writeUVarInt(out, (img.width * COORD_SCALE).roundToInt().coerceAtLeast(10))
+            writeUVarInt(out, (img.height * COORD_SCALE).roundToInt().coerceAtLeast(10))
+            writeString(out, img.filePath)
+        }
     }
 
     private fun readPayload(
@@ -298,6 +328,12 @@ object NoteBinaryCodec {
         var courseName = "Fizik"
         var paperColor = PaperColor.CREAM
         var paperTemplate = PaperTemplate.DOTTED
+        var isFavorite = false
+        var isPinned = false
+        var tags: List<String> = emptyList()
+        var finalPages: List<NotePage> = pages
+        val images = ArrayList<NoteImageBlock>()
+
         try {
             val readCourse = readString(inp)
             if (readCourse.isNotBlank()) courseName = readCourse
@@ -305,6 +341,61 @@ object NoteBinaryCodec {
             if (colorId >= 0) paperColor = PaperColor.fromWireId(colorId)
             val templateId = inp.read()
             if (templateId >= 0) paperTemplate = PaperTemplate.fromWireId(templateId)
+
+            val extMarker = inp.read()
+            if (extMarker == EXT_META_MARKER) {
+                val flags = inp.read()
+                if (flags >= 0) {
+                    isFavorite = (flags and 1) != 0
+                    isPinned = (flags and 2) != 0
+                }
+
+                val tagCount = readUVarInt(inp)
+                if (tagCount in 0..200) {
+                    val tagList = ArrayList<String>(tagCount)
+                    for (t in 0 until tagCount) {
+                        val normalized = TagNormalizer.normalize(readString(inp))
+                        if (normalized.isNotEmpty()) tagList.add(normalized)
+                    }
+                    tags = tagList.distinct()
+                }
+
+                val bgCount = readUVarInt(inp)
+                if (bgCount in 0..2_000) {
+                    val bgs = ArrayList<String?>(bgCount)
+                    for (b in 0 until bgCount) {
+                        val path = readString(inp)
+                        bgs.add(path.ifBlank { null })
+                    }
+                    finalPages = pages.mapIndexed { idx, pg ->
+                        pg.copy(backgroundImagePath = bgs.getOrNull(idx))
+                    }
+                }
+
+                val imgCount = readUVarInt(inp)
+                if (imgCount in 0..2_000) {
+                    for (m in 0 until imgCount) {
+                        val imgId = readString(inp)
+                        val pageIdx = readUVarInt(inp)
+                        val ix = readZigZagVarInt(inp) / COORD_SCALE
+                        val iy = readZigZagVarInt(inp) / COORD_SCALE
+                        val iw = readUVarInt(inp) / COORD_SCALE
+                        val ih = readUVarInt(inp) / COORD_SCALE
+                        val path = readString(inp)
+                        images.add(
+                            NoteImageBlock(
+                                id = imgId,
+                                pageIndex = pageIdx,
+                                x = ix,
+                                y = iy,
+                                width = iw,
+                                height = ih,
+                                filePath = path
+                            )
+                        )
+                    }
+                }
+            }
         } catch (_: EOFException) {
             // Eski v1 dosyalarında bu ek alanlar yoksa varsayılan değerler kullanılır
         }
@@ -312,14 +403,18 @@ object NoteBinaryCodec {
         return NoteDocument(
             id = id,
             title = title,
-            pages = pages,
+            pages = finalPages,
             strokes = strokes,
             textBlocks = textBlocks,
             createdAtMillis = createdAtMillis,
             updatedAtMillis = updatedAtMillis,
             courseName = courseName,
             paperColor = paperColor,
-            paperTemplate = paperTemplate
+            paperTemplate = paperTemplate,
+            images = images,
+            isFavorite = isFavorite,
+            isPinned = isPinned,
+            tags = tags
         )
     }
 

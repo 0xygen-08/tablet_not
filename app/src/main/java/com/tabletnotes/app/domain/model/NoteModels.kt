@@ -53,6 +53,49 @@ enum class EraserMode {
 }
 
 /**
+ * Kalem (Stylus) yan tuşuna basılı tutulduğunda geçilecek geçici araç.
+ */
+enum class StylusButtonAction(val wireId: Int) {
+    ERASER(0),
+    LASSO_SELECT(1),
+    LASER_POINTER(2),
+    DISABLED(3);
+
+    companion object {
+        fun fromWireId(id: Int): StylusButtonAction =
+            entries.firstOrNull { it.wireId == id } ?: ERASER
+    }
+}
+
+/**
+ * Etiket (#vize, #ödev vb.) normalleştirme ve CSV dönüşüm yardımcısı.
+ */
+object TagNormalizer {
+    fun normalize(raw: String): String {
+        val cleaned = raw.trim()
+            .removePrefix("#")
+            .replace('İ', 'i')
+            .replace('I', 'i')
+            .lowercase(java.util.Locale.ROOT)
+            .replace(Regex("[^\\p{L}\\p{N}_-]"), "")
+            .take(24)
+        return cleaned
+    }
+
+    fun parseCsv(csv: String): List<String> =
+        csv.split(",")
+            .map { normalize(it) }
+            .filter { it.isNotEmpty() }
+            .distinct()
+
+    fun toCsv(tags: List<String>): String =
+        tags.map { normalize(it) }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .joinToString(",")
+}
+
+/**
  * Şekil algılama motorunun tanıdığı geometrik şekil tipleri.
  */
 enum class RecognizedShapeType {
@@ -243,13 +286,35 @@ data class TextBlock(
 )
 
 /**
- * Dikey çoklu sayfa yapısındaki her bir sayfanın mantıksal boyutları.
+ * Galeriden sayfa üzerine eklenen, taşınabilir ve boyutlandırılabilir görsel bloğu.
+ */
+@Immutable
+data class NoteImageBlock(
+    val id: String,
+    val pageIndex: Int = 0,
+    val x: Float,
+    val y: Float,
+    val width: Float,
+    val height: Float,
+    val filePath: String
+) {
+    fun bounds(): BoundingBox = BoundingBox(
+        minX = x,
+        minY = y,
+        maxX = x + width,
+        maxY = y + height
+    )
+}
+
+/**
+ * Dikey çoklu sayfa yapısındaki her bir sayfanın mantıksal boyutları ve isteğe bağlı PDF/görsel arka planı.
  */
 @Immutable
 data class NotePage(
     val pageIndex: Int,
     val widthPt: Float = DEFAULT_PAGE_WIDTH,
-    val heightPt: Float = DEFAULT_PAGE_HEIGHT
+    val heightPt: Float = DEFAULT_PAGE_HEIGHT,
+    val backgroundImagePath: String? = null
 ) {
     companion object {
         const val DEFAULT_PAGE_WIDTH = 900f
@@ -268,7 +333,7 @@ data class NotePage(
 }
 
 /**
- * Bir not belgesinin tüm vektör verisi (çizgiler, metin kutuları, sayfa yapısı, ders klasörü ve kağıt ayarları).
+ * Bir not belgesinin tüm vektör verisi (çizgiler, metin kutuları, görseller, sayfa yapısı, etiketler ve kağıt ayarları).
  */
 @Immutable
 data class NoteDocument(
@@ -281,5 +346,9 @@ data class NoteDocument(
     val updatedAtMillis: Long,
     val courseName: String = "Fizik",
     val paperColor: PaperColor = PaperColor.CREAM,
-    val paperTemplate: PaperTemplate = PaperTemplate.DOTTED
+    val paperTemplate: PaperTemplate = PaperTemplate.DOTTED,
+    val images: List<NoteImageBlock> = emptyList(),
+    val isFavorite: Boolean = false,
+    val isPinned: Boolean = false,
+    val tags: List<String> = emptyList()
 )

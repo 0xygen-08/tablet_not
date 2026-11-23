@@ -9,8 +9,11 @@ enum class InputRouteDecision {
     /** Çizim veya silme işlemi olarak işle (Kalem veya masaüstü emülatör faresi). */
     DRAW_OR_ERASE,
 
-    /** Donanım kalem silgisi (kalemin arka ucu veya gövde tuşu) ile doğrudan silgi olarak işle. */
+    /** Donanım kalem silgisi (kalemin arka silgi ucu `TOOL_TYPE_ERASER`) ile doğrudan silgi olarak işle. */
     HARDWARE_STYLUS_ERASER,
+
+    /** Kalem gövdesindeki yan tuşa (Stylus Button) basılı tutularak başlatılan kısayol aracı. */
+    STYLUS_SIDE_BUTTON,
 
     /** Tuvali kaydırma / yakınlaştırma (Pan / Zoom) hareketi olarak işle (Parmağın her zaman yaptığı işlem). */
     PAN_ZOOM,
@@ -68,13 +71,13 @@ class PalmRejectionFilter(
             isStylusCurrentlyDown = event.actionMasked != MotionEvent.ACTION_UP &&
                 event.actionMasked != MotionEvent.ACTION_POINTER_UP
 
-            val isEraserTailOrButton = toolType == MotionEvent.TOOL_TYPE_ERASER ||
-                (buttonState and MotionEvent.BUTTON_STYLUS_PRIMARY) != 0
+            val isHardwareEraserTip = toolType == MotionEvent.TOOL_TYPE_ERASER
+            val isSideButtonPressed = (buttonState and (MotionEvent.BUTTON_STYLUS_PRIMARY or MotionEvent.BUTTON_STYLUS_SECONDARY)) != 0
 
-            return if (isEraserTailOrButton) {
-                InputRouteDecision.HARDWARE_STYLUS_ERASER
-            } else {
-                InputRouteDecision.DRAW_OR_ERASE
+            return when {
+                isHardwareEraserTip -> InputRouteDecision.HARDWARE_STYLUS_ERASER
+                isSideButtonPressed -> InputRouteDecision.STYLUS_SIDE_BUTTON
+                else -> InputRouteDecision.DRAW_OR_ERASE
             }
         }
 

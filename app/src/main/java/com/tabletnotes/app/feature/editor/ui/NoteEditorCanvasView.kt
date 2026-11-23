@@ -2,6 +2,8 @@ package com.tabletnotes.app.feature.editor.ui
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.DashPathEffect
 import android.graphics.Paint
@@ -16,14 +18,17 @@ import com.tabletnotes.app.core.designsystem.theme.NoteThemePalette
 import com.tabletnotes.app.domain.model.BoundingBox
 import com.tabletnotes.app.domain.model.DrawingToolType
 import com.tabletnotes.app.domain.model.EraserMode
+import com.tabletnotes.app.domain.model.NoteImageBlock
 import com.tabletnotes.app.domain.model.NotePage
 import com.tabletnotes.app.domain.model.NoteStroke
 import com.tabletnotes.app.domain.model.PaperTemplate
 import com.tabletnotes.app.domain.model.StrokePoint
+import com.tabletnotes.app.domain.model.StylusButtonAction
 import com.tabletnotes.app.feature.editor.canvas.StrokeRenderer
 import com.tabletnotes.app.feature.editor.ink.InputRouteDecision
 import com.tabletnotes.app.feature.editor.ink.LowLatencyInkEngine
 import com.tabletnotes.app.feature.editor.ink.PalmRejectionFilter
+import java.io.File
 import java.util.UUID
 import kotlin.math.hypot
 import kotlin.math.max
@@ -88,6 +93,24 @@ class NoteEditorCanvasView(
     private var isResizingPendingShape: Boolean = false
     private var lastShapeTouchDocX: Float = 0f
     private var lastShapeTouchDocY: Float = 0f
+
+    // Seçili Görsel Bloğu (Gallery Image) Taşıma / Boyutlandırma Durumu
+    private var isDraggingSelectedImage: Boolean = false
+    private var isResizingSelectedImage: Boolean = false
+    private var lastImageTouchDocX: Float = 0f
+    private var lastImageTouchDocY: Float = 0f
+    private var imageOriginalSnapshot: NoteImageBlock? = null
+
+    // Kalem yan tuşu basılıyken başlayan aktif aracı ACTION_UP anına kadar koru
+    private var inFlightStylusTool: DrawingToolType? = null
+
+    // PDF arka planı & galeri görselleri için LRU bellek önbelleği (en fazla 24 bitmap)
+    private val imageBitmapCache = object : LinkedHashMap<String, Bitmap>(32, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>?): Boolean {
+            return size > 24
+        }
+    }
+    private val imagePaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
 
     // Tek/İki parmak kaydırma (Pan) ve yakınlaştırma (Zoom) durumu
     private var isPanning: Boolean = false
@@ -275,14 +298,23 @@ class NoteEditorCanvasView(
             return true
         }
 
+        // Seçili görsel varsa: hem parmak hem kalem görseli taşıyabilir veya köşesinden boyutlandırabilir
+        if (controller.selectedImageId != null && handleSelectedImageTouchIfHit(event)) {
+            return true
+        }
+
         val decision = palmFilter.evaluate(event = event, stylusOnlyMode = true)
 
         if (decision == InputRouteDecision.REJECTED_PALM) {
+            controller.isStylusSideButtonHeld = false
+            inFlightStylusTool = null
             cancelInFlightDrawingIfAny()
             return true
         }
 
         if (decision == InputRouteDecision.PAN_ZOOM) {
+            controller.isStylusSideButtonHeld = false
+            inFlightStylusTool = null
             // Kare seçim modunda aktif kutu içindeyse parmakla da taşınabilsin
             if (controller.activeTool == DrawingToolType.LASSO_SELECT &&
                 controller.selectionBounds != null &&
@@ -301,10 +333,48 @@ class NoteEditorCanvasView(
 
         isPanning = false
         resetPullToAddPage()
-        val effectiveTool = if (decision == InputRouteDecision.HARDWARE_STYLUS_ERASER) {
-            DrawingToolType.ERASER
-        } else {
-            controller.activeTool
+
+        val sideButtonTool = when (controller.stylusSideButtonAction) {
+            StylusButtonAction.ERASER -> DrawingToolType.ERASER
+            StylusButtonAction.LASSO_SELECT -> DrawingToolType.LASSO_SELECT
+            StylusButtonAction.LASER_POINTER -> DrawingToolType.LASER_POINTER
+            StylusButtonAction.DISABLED -> controller.activeTool
+        }
+
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            inFlightStylusTool = when (decision) {
+                InputRouteDecision.HARDWARE_STYLUS_ERASER -> DrawingToolType.ERASER
+                InputRouteDecision.STYLUS_SIDE_BUTTON -> sideButtonTool
+                else -> controller.activeTool
+            }
+        }
+
+        controller.isStylusSideButtonHeld = (decision == InputRouteDecision.STYLUS_SIDE_BUTTON) &&
+            controller.stylusSideButtonAction != StylusButtonAction.DISABLED &&
+            event.actionMasked != MotionEvent.ACTION_UP &&
+            event.actionMasked != MotionEvent.ACTION_CANCEL
+
+        val effectiveTool = when (decision) {
+            InputRouteDecision.HARDWARE_STYLUS_ERASER -> DrawingToolType.ERASER
+            InputRouteDecision.STYLUS_SIDE_BUTTON -> sideButtonTool
+            else -> inFlightStylusTool ?: controller.activeTool
+        }
+
+        // Seçim modundayken (veya yan tuşla seçimdeyken) bir görsele dokunulursa o görseli seç
+        if (effectiveTool == DrawingToolType.LASSO_SELECT &&
+            event.actionMasked == MotionEvent.ACTION_DOWN &&
+            controller.selectionBounds == null
+        ) {
+            val docX = screenToDocX(event.x)
+            val docY = screenToDocY(event.y)
+            val hitImg = controller.images.lastOrNull { it.bounds().contains(docX, docY) }
+            if (hitImg != null) {
+                controller.clearSelection()
+                controller.selectImage(hitImg.id)
+                handleSelectedImageTouchIfHit(event)
+                invalidate()
+                return true
+            }
         }
 
         when (effectiveTool) {
@@ -315,7 +385,116 @@ class NoteEditorCanvasView(
             DrawingToolType.SHAPE_TOOL -> handleInkDrawingTouch(event, DrawingToolType.SHAPE_TOOL)
             else -> handleInkDrawingTouch(event, effectiveTool)
         }
+
+        if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
+            inFlightStylusTool = null
+            controller.isStylusSideButtonHeld = false
+        }
         return true
+    }
+
+    // --- SEÇİLİ GÖRSEL BLOKU TAŞIMA / BOYUTLANDIRMA ---
+
+    private fun handleSelectedImageTouchIfHit(event: MotionEvent): Boolean {
+        val img = controller.getSelectedImage() ?: return false
+        if (event.pointerCount >= 2) {
+            isDraggingSelectedImage = false
+            isResizingSelectedImage = false
+            imageOriginalSnapshot = null
+            return false
+        }
+
+        val docX = screenToDocX(event.x)
+        val docY = screenToDocY(event.y)
+        val bounds = img.bounds()
+
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                val handleThreshold = 34f / controller.zoom
+                val hitCorner =
+                    hypot(docX - bounds.maxX, docY - bounds.maxY) <= handleThreshold ||
+                        hypot(docX - bounds.minX, docY - bounds.minY) <= handleThreshold ||
+                        hypot(docX - bounds.maxX, docY - bounds.minY) <= handleThreshold ||
+                        hypot(docX - bounds.minX, docY - bounds.maxY) <= handleThreshold
+
+                if (hitCorner) {
+                    isResizingSelectedImage = true
+                    isDraggingSelectedImage = false
+                    lastImageTouchDocX = docX
+                    lastImageTouchDocY = docY
+                    imageOriginalSnapshot = img
+                    return true
+                }
+                if (bounds.inflated(12f).contains(docX, docY)) {
+                    isDraggingSelectedImage = true
+                    isResizingSelectedImage = false
+                    lastImageTouchDocX = docX
+                    lastImageTouchDocY = docY
+                    imageOriginalSnapshot = img
+                    return true
+                }
+
+                // Görsel dışına dokunuldu -> seçimi bırak
+                controller.selectImage(null)
+                invalidate()
+                return false
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (isResizingSelectedImage) {
+                    val prevDist = max(24f, hypot(lastImageTouchDocX - bounds.centerX, lastImageTouchDocY - bounds.centerY))
+                    val currDist = max(24f, hypot(docX - bounds.centerX, docY - bounds.centerY))
+                    val ratio = (currDist / prevDist).coerceIn(0.85f, 1.18f)
+                    if (kotlin.math.abs(ratio - 1f) > 0.012f) {
+                        controller.scaleSelectedImage(
+                            factor = ratio,
+                            recordUndo = false,
+                            originalSnapshot = imageOriginalSnapshot
+                        )
+                        lastImageTouchDocX = docX
+                        lastImageTouchDocY = docY
+                        invalidate()
+                    }
+                    return true
+                }
+                if (isDraggingSelectedImage) {
+                    val dx = docX - lastImageTouchDocX
+                    val dy = docY - lastImageTouchDocY
+                    if (hypot(dx, dy) >= 0.5f) {
+                        controller.translateSelectedImage(dx, dy, recordUndo = false)
+                        lastImageTouchDocX = docX
+                        lastImageTouchDocY = docY
+                        invalidate()
+                    }
+                    return true
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (isDraggingSelectedImage) {
+                    controller.translateSelectedImage(
+                        dx = 0f,
+                        dy = 0f,
+                        recordUndo = true,
+                        originalSnapshot = imageOriginalSnapshot
+                    )
+                    isDraggingSelectedImage = false
+                    imageOriginalSnapshot = null
+                    invalidate()
+                    return true
+                }
+                if (isResizingSelectedImage) {
+                    controller.scaleSelectedImage(
+                        factor = 1f,
+                        recordUndo = true,
+                        originalSnapshot = imageOriginalSnapshot
+                    )
+                    isResizingSelectedImage = false
+                    imageOriginalSnapshot = null
+                    invalidate()
+                    return true
+                }
+            }
+        }
+        return false
     }
 
     // --- BEKLEYEN ŞEKİL TAŞIMA / BOYUTLANDIRMA ---
@@ -937,11 +1116,15 @@ class NoteEditorCanvasView(
             )
 
             if (controller.strokeCount <= 2_500) {
+                // Görselleri çizgilerin altına çiz ki kullanıcı fotoğraf/ekran görüntüsü üstüne yazabilsin
+                drawImagesForPage(canvas, page.pageIndex, pageDocBounds)
+
                 val strokes = controller.spatialIndex.queryViewport(intersectedViewport)
                 for (i in strokes.indices) {
                     StrokeRenderer.drawStroke(canvas, strokes[i])
                 }
             } else {
+                drawImagesForPage(canvas, page.pageIndex, pageDocBounds)
                 controller.tileCache.drawVisibleTiles(
                     canvas = canvas,
                     viewportDocBounds = intersectedViewport,
@@ -1080,45 +1263,56 @@ class NoteEditorCanvasView(
             pageRect.set(0f, topY, page.widthPt, bottomY)
             canvas.drawRoundRect(pageRect, 24f, 24f, pageBgPaint)
 
-            when (pTemplate) {
-                PaperTemplate.DOTTED -> {
-                    var gy = topY + gridStep
-                    while (gy < bottomY - 12f) {
-                        var gx = gridStep
-                        while (gx < page.widthPt - 12f) {
-                            canvas.drawCircle(gx, gy, 1.8f, dotPatternPaint)
-                            gx += gridStep
+            val bgPath = page.backgroundImagePath
+            val bgBitmap = if (!bgPath.isNullOrBlank()) loadCachedBitmap(bgPath) else null
+            if (bgBitmap != null) {
+                pageClipPath.reset()
+                pageClipPath.addRoundRect(pageRect, 24f, 24f, Path.Direction.CW)
+                canvas.save()
+                canvas.clipPath(pageClipPath)
+                canvas.drawBitmap(bgBitmap, null, pageRect, imagePaint)
+                canvas.restore()
+            } else {
+                when (pTemplate) {
+                    PaperTemplate.DOTTED -> {
+                        var gy = topY + gridStep
+                        while (gy < bottomY - 12f) {
+                            var gx = gridStep
+                            while (gx < page.widthPt - 12f) {
+                                canvas.drawCircle(gx, gy, 1.8f, dotPatternPaint)
+                                gx += gridStep
+                            }
+                            gy += gridStep
                         }
-                        gy += gridStep
                     }
+                    PaperTemplate.GRID -> {
+                        var col = 0
+                        var gx = gridStep
+                        while (gx < page.widthPt) {
+                            val isMajor = col % 5 == 0
+                            canvas.drawLine(gx, topY, gx, bottomY, if (isMajor) majorGridPaint else minorGridPaint)
+                            gx += gridStep
+                            col++
+                        }
+                        var row = 0
+                        var gy = topY + gridStep
+                        while (gy < bottomY) {
+                            val isMajor = row % 5 == 0
+                            canvas.drawLine(0f, gy, page.widthPt, gy, if (isMajor) majorGridPaint else minorGridPaint)
+                            gy += gridStep
+                            row++
+                        }
+                    }
+                    PaperTemplate.LINED -> {
+                        val lineSpacing = 36f
+                        var gy = topY + 64f
+                        while (gy < bottomY - 24f) {
+                            canvas.drawLine(32f, gy, page.widthPt - 32f, gy, minorGridPaint)
+                            gy += lineSpacing
+                        }
+                    }
+                    PaperTemplate.BLANK -> Unit
                 }
-                PaperTemplate.GRID -> {
-                    var col = 0
-                    var gx = gridStep
-                    while (gx < page.widthPt) {
-                        val isMajor = col % 5 == 0
-                        canvas.drawLine(gx, topY, gx, bottomY, if (isMajor) majorGridPaint else minorGridPaint)
-                        gx += gridStep
-                        col++
-                    }
-                    var row = 0
-                    var gy = topY + gridStep
-                    while (gy < bottomY) {
-                        val isMajor = row % 5 == 0
-                        canvas.drawLine(0f, gy, page.widthPt, gy, if (isMajor) majorGridPaint else minorGridPaint)
-                        gy += gridStep
-                        row++
-                    }
-                }
-                PaperTemplate.LINED -> {
-                    val lineSpacing = 36f
-                    var gy = topY + 64f
-                    while (gy < bottomY - 24f) {
-                        canvas.drawLine(32f, gy, page.widthPt - 32f, gy, minorGridPaint)
-                        gy += lineSpacing
-                    }
-                }
-                PaperTemplate.BLANK -> Unit
             }
 
             canvas.drawText(
@@ -1128,6 +1322,49 @@ class NoteEditorCanvasView(
                 pageLabelPaint
             )
         }
+    }
+
+    private fun drawImagesForPage(
+        canvas: Canvas,
+        pageIndex: Int,
+        pageDocBounds: BoundingBox
+    ) {
+        for (img in controller.images) {
+            if (img.pageIndex != pageIndex && !img.bounds().intersects(pageDocBounds)) continue
+            val bmp = loadCachedBitmap(img.filePath) ?: continue
+            selectionRectF.set(img.x, img.y, img.x + img.width, img.y + img.height)
+            canvas.drawBitmap(bmp, null, selectionRectF, imagePaint)
+
+            if (img.id == controller.selectedImageId) {
+                canvas.drawRoundRect(selectionRectF, 6f, 6f, selectionBoxStrokePaint)
+                val r = 9f
+                canvas.drawCircle(img.x, img.y, r, selectionHandlePaint)
+                canvas.drawCircle(img.x + img.width, img.y, r, selectionHandlePaint)
+                canvas.drawCircle(img.x, img.y + img.height, r, selectionHandlePaint)
+                canvas.drawCircle(img.x + img.width, img.y + img.height, r * 1.25f, selectionHandlePaint)
+            }
+        }
+    }
+
+    private fun loadCachedBitmap(path: String): Bitmap? {
+        imageBitmapCache[path]?.let { cached ->
+            if (!cached.isRecycled) return cached
+        }
+        val file = File(path)
+        if (!file.exists()) return null
+
+        val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, boundsOpts)
+        var sampleSize = 1
+        while (boundsOpts.outWidth / sampleSize > 1600 || boundsOpts.outHeight / sampleSize > 1600) {
+            sampleSize *= 2
+        }
+        val decoded = BitmapFactory.decodeFile(
+            file.absolutePath,
+            BitmapFactory.Options().apply { inSampleSize = sampleSize }
+        ) ?: return null
+        imageBitmapCache[path] = decoded
+        return decoded
     }
 
     private fun drawTextBlocksForPage(

@@ -19,5 +19,10 @@ data class NoteEntity(
     val fileSizeBytes: Long,
     val createdAtMillis: Long,
     val updatedAtMillis: Long,
-    val courseName: String = "Fizik"
+    val courseName: String = "Fizik",
+    val isFavorite: Boolean = false,
+    val isPinned: Boolean = false,
+    val tagsCsv: String = "",
+    val isTrashed: Boolean = false,
+    val trashedAtMillis: Long? = null
 )

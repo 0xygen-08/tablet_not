@@ -11,12 +11,15 @@ import com.tabletnotes.app.domain.model.BoundingBox
 import com.tabletnotes.app.domain.model.DrawingToolType
 import com.tabletnotes.app.domain.model.EraserMode
 import com.tabletnotes.app.domain.model.NoteDocument
+import com.tabletnotes.app.domain.model.NoteImageBlock
 import com.tabletnotes.app.domain.model.NotePage
 import com.tabletnotes.app.domain.model.NoteStroke
 import com.tabletnotes.app.domain.model.PaperColor
 import com.tabletnotes.app.domain.model.PaperTemplate
 import com.tabletnotes.app.domain.model.PendingRecognizedShape
 import com.tabletnotes.app.domain.model.StrokePoint
+import com.tabletnotes.app.domain.model.StylusButtonAction
+import com.tabletnotes.app.domain.model.TagNormalizer
 import com.tabletnotes.app.domain.model.TextBlock
 import com.tabletnotes.app.feature.editor.canvas.BitmapTileCache
 import com.tabletnotes.app.feature.editor.history.EditorCommand
@@ -60,6 +63,16 @@ class NoteEditorController(
         private set
     var createdAtMillis by mutableLongStateOf(System.currentTimeMillis())
         private set
+    var isFavorite by mutableStateOf(false)
+        private set
+    var isPinned by mutableStateOf(false)
+        private set
+    var tags by mutableStateOf<List<String>>(emptyList())
+        private set
+
+    // Kalem (Stylus) Yan Tuşu Kısayol Ayarı ve Anlık Basılı Tutma Durumu
+    var stylusSideButtonAction by mutableStateOf(StylusButtonAction.ERASER)
+    var isStylusSideButtonHeld by mutableStateOf(false)
 
     // Odak Modu (Focus Mode — Yüzen araç çubuğunu gizler/gösterir)
     var isFocusMode by mutableStateOf(false)
@@ -127,6 +140,10 @@ class NoteEditorController(
         private set
 
     var textBlocks by mutableStateOf<List<TextBlock>>(emptyList())
+        private set
+    var images by mutableStateOf<List<NoteImageBlock>>(emptyList())
+        private set
+    var selectedImageId by mutableStateOf<String?>(null)
         private set
 
     // Performans ve Durum Sayaçları
@@ -214,8 +231,13 @@ class NoteEditorController(
         paperColor = document.paperColor
         paperTemplate = document.paperTemplate
         createdAtMillis = document.createdAtMillis
+        isFavorite = document.isFavorite
+        isPinned = document.isPinned
+        tags = document.tags
         pages = document.pages.ifEmpty { listOf(NotePage(0)) }
         textBlocks = document.textBlocks
+        images = document.images
+        selectedImageId = null
 
         spatialIndex.clear()
         spatialIndex.insertAll(document.strokes)
@@ -248,8 +270,36 @@ class NoteEditorController(
             updatedAtMillis = nowMillis,
             courseName = courseName,
             paperColor = paperColor,
-            paperTemplate = paperTemplate
+            paperTemplate = paperTemplate,
+            images = images,
+            isFavorite = isFavorite,
+            isPinned = isPinned,
+            tags = tags
         )
+    }
+
+    fun toggleFavorite() {
+        isFavorite = !isFavorite
+        syncCounters(notifyMutation = true)
+    }
+
+    fun togglePinned() {
+        isPinned = !isPinned
+        syncCounters(notifyMutation = true)
+    }
+
+    fun addTag(rawTag: String) {
+        val clean = TagNormalizer.normalize(rawTag)
+        if (clean.isEmpty() || clean in tags) return
+        tags = tags + clean
+        syncCounters(notifyMutation = true)
+    }
+
+    fun removeTag(tag: String) {
+        val clean = TagNormalizer.normalize(tag)
+        if (clean !in tags) return
+        tags = tags.filterNot { it == clean }
+        syncCounters(notifyMutation = true)
     }
 
     fun updateTitleAndCourse(newTitle: String, newCourse: String = courseName) {
@@ -334,9 +384,363 @@ class NoteEditorController(
         pages = pages + NotePage(pageIndex = nextIndex)
         pullAddPageProgress = 0f
         if (scrollToNewPage) {
-            val topY = NotePage.pageTopY(nextIndex)
-            updateZoomAndPan(zoom, panX, -(topY * zoom) + 24f)
+            scrollToPage(nextIndex)
         }
+        syncCounters(notifyMutation = true)
+    }
+
+    fun getCurrentVisiblePageIndex(): Int {
+        if (pages.isEmpty()) return 0
+        val centerDocY = (-panY + lastViewHeight * 0.45f) / zoom.coerceAtLeast(0.1f)
+        return NotePage.pageIndexAtY(centerDocY, pages.size)
+    }
+
+    fun scrollToPage(pageIndex: Int) {
+        val safeIdx = pageIndex.coerceIn(0, (pages.size - 1).coerceAtLeast(0))
+        val topY = NotePage.pageTopY(safeIdx)
+        updateZoomAndPan(zoom, panX, -(topY * zoom) + 24f)
+    }
+
+    fun appendPages(newPages: List<NotePage>, scrollToFirstNew: Boolean = true) {
+        if (newPages.isEmpty()) return
+        val startIndex = pages.size
+        val indexed = newPages.mapIndexed { offset, page ->
+            page.copy(pageIndex = startIndex + offset)
+        }
+        pages = pages + indexed
+        if (scrollToFirstNew) {
+            scrollToPage(startIndex)
+        }
+        syncCounters(notifyMutation = true)
+    }
+
+    fun insertBlankPageAfter(afterIndex: Int) {
+        val safeAfter = afterIndex.coerceIn(0, (pages.size - 1).coerceAtLeast(0))
+        val stride = NotePage.DEFAULT_PAGE_HEIGHT + NotePage.PAGE_GAP
+
+        pages = buildList(pages.size + 1) {
+            pages.forEachIndexed { idx, page ->
+                if (idx <= safeAfter) {
+                    add(page.copy(pageIndex = idx))
+                } else {
+                    add(page.copy(pageIndex = idx + 1))
+                }
+                if (idx == safeAfter) {
+                    add(NotePage(pageIndex = safeAfter + 1))
+                }
+            }
+        }
+
+        val shiftedStrokes = spatialIndex.getAllStrokes().map { stroke ->
+            if (stroke.pageIndex > safeAfter) {
+                val movedPts = stroke.points.map { it.copy(y = it.y + stride) }
+                stroke.copy(
+                    pageIndex = stroke.pageIndex + 1,
+                    points = movedPts,
+                    bounds = BoundingBox.fromPoints(movedPts, padding = stroke.thickness * 1.5f)
+                )
+            } else {
+                stroke
+            }
+        }
+        textBlocks = textBlocks.map { tb ->
+            if (tb.pageIndex > safeAfter) tb.copy(pageIndex = tb.pageIndex + 1, y = tb.y + stride) else tb
+        }
+        images = images.map { img ->
+            if (img.pageIndex > safeAfter) img.copy(pageIndex = img.pageIndex + 1, y = img.y + stride) else img
+        }
+
+        rebuildSpatialStateAfterPageChange(shiftedStrokes)
+        scrollToPage(safeAfter + 1)
+    }
+
+    fun duplicatePage(pageIndex: Int) {
+        val target = pages.getOrNull(pageIndex) ?: return
+        val stride = NotePage.DEFAULT_PAGE_HEIGHT + NotePage.PAGE_GAP
+
+        pages = buildList(pages.size + 1) {
+            pages.forEachIndexed { idx, page ->
+                if (idx <= pageIndex) {
+                    add(page.copy(pageIndex = idx))
+                } else {
+                    add(page.copy(pageIndex = idx + 1))
+                }
+                if (idx == pageIndex) {
+                    add(target.copy(pageIndex = pageIndex + 1))
+                }
+            }
+        }
+
+        val nextStrokes = ArrayList<NoteStroke>(spatialIndex.size + 16)
+        for (stroke in spatialIndex.getAllStrokes()) {
+            when {
+                stroke.pageIndex < pageIndex -> nextStrokes.add(stroke)
+                stroke.pageIndex == pageIndex -> {
+                    nextStrokes.add(stroke)
+                    val clonedPts = stroke.points.map { it.copy(y = it.y + stride) }
+                    nextStrokes.add(
+                        stroke.copy(
+                            id = UUID.randomUUID().toString(),
+                            pageIndex = pageIndex + 1,
+                            points = clonedPts,
+                            bounds = BoundingBox.fromPoints(clonedPts, padding = stroke.thickness * 1.5f)
+                        )
+                    )
+                }
+                else -> {
+                    val movedPts = stroke.points.map { it.copy(y = it.y + stride) }
+                    nextStrokes.add(
+                        stroke.copy(
+                            pageIndex = stroke.pageIndex + 1,
+                            points = movedPts,
+                            bounds = BoundingBox.fromPoints(movedPts, padding = stroke.thickness * 1.5f)
+                        )
+                    )
+                }
+            }
+        }
+
+        textBlocks = buildList {
+            for (tb in textBlocks) {
+                when {
+                    tb.pageIndex < pageIndex -> add(tb)
+                    tb.pageIndex == pageIndex -> {
+                        add(tb)
+                        add(tb.copy(id = UUID.randomUUID().toString(), pageIndex = pageIndex + 1, y = tb.y + stride))
+                    }
+                    else -> add(tb.copy(pageIndex = tb.pageIndex + 1, y = tb.y + stride))
+                }
+            }
+        }
+
+        images = buildList {
+            for (img in images) {
+                when {
+                    img.pageIndex < pageIndex -> add(img)
+                    img.pageIndex == pageIndex -> {
+                        add(img)
+                        add(img.copy(id = UUID.randomUUID().toString(), pageIndex = pageIndex + 1, y = img.y + stride))
+                    }
+                    else -> add(img.copy(pageIndex = img.pageIndex + 1, y = img.y + stride))
+                }
+            }
+        }
+
+        rebuildSpatialStateAfterPageChange(nextStrokes)
+        scrollToPage(pageIndex + 1)
+    }
+
+    fun movePage(fromIndex: Int, toIndex: Int) {
+        if (fromIndex == toIndex || fromIndex !in pages.indices || toIndex !in pages.indices) return
+        val stride = NotePage.DEFAULT_PAGE_HEIGHT + NotePage.PAGE_GAP
+
+        // Eski indeks -> yeni indeks eşlemesi kur
+        val oldOrder = pages.indices.toMutableList()
+        val movedItem = oldOrder.removeAt(fromIndex)
+        oldOrder.add(toIndex, movedItem)
+
+        val oldToNew = IntArray(pages.size)
+        oldOrder.forEachIndexed { newIdx, oldIdx ->
+            oldToNew[oldIdx] = newIdx
+        }
+
+        pages = oldOrder.mapIndexed { newIdx, oldIdx ->
+            pages[oldIdx].copy(pageIndex = newIdx)
+        }
+
+        val shiftedStrokes = spatialIndex.getAllStrokes().map { stroke ->
+            val oldIdx = stroke.pageIndex.coerceIn(0, oldToNew.lastIndex)
+            val newIdx = oldToNew[oldIdx]
+            val deltaY = (newIdx - oldIdx) * stride
+            if (deltaY == 0f && stroke.pageIndex == newIdx) {
+                stroke
+            } else {
+                val movedPts = stroke.points.map { it.copy(y = it.y + deltaY) }
+                stroke.copy(
+                    pageIndex = newIdx,
+                    points = movedPts,
+                    bounds = BoundingBox.fromPoints(movedPts, padding = stroke.thickness * 1.5f)
+                )
+            }
+        }
+
+        textBlocks = textBlocks.map { tb ->
+            val oldIdx = tb.pageIndex.coerceIn(0, oldToNew.lastIndex)
+            val newIdx = oldToNew[oldIdx]
+            tb.copy(pageIndex = newIdx, y = tb.y + (newIdx - oldIdx) * stride)
+        }
+
+        images = images.map { img ->
+            val oldIdx = img.pageIndex.coerceIn(0, oldToNew.lastIndex)
+            val newIdx = oldToNew[oldIdx]
+            img.copy(pageIndex = newIdx, y = img.y + (newIdx - oldIdx) * stride)
+        }
+
+        rebuildSpatialStateAfterPageChange(shiftedStrokes)
+        scrollToPage(toIndex)
+    }
+
+    fun deletePage(pageIndex: Int): Boolean {
+        if (pages.size <= 1 || pageIndex !in pages.indices) return false
+        val stride = NotePage.DEFAULT_PAGE_HEIGHT + NotePage.PAGE_GAP
+
+        pages = pages
+            .filterNot { it.pageIndex == pageIndex }
+            .mapIndexed { newIdx, page -> page.copy(pageIndex = newIdx) }
+
+        val remainingStrokes = spatialIndex.getAllStrokes().mapNotNull { stroke ->
+            when {
+                stroke.pageIndex == pageIndex -> null
+                stroke.pageIndex > pageIndex -> {
+                    val movedPts = stroke.points.map { it.copy(y = it.y - stride) }
+                    stroke.copy(
+                        pageIndex = stroke.pageIndex - 1,
+                        points = movedPts,
+                        bounds = BoundingBox.fromPoints(movedPts, padding = stroke.thickness * 1.5f)
+                    )
+                }
+                else -> stroke
+            }
+        }
+
+        textBlocks = textBlocks.mapNotNull { tb ->
+            when {
+                tb.pageIndex == pageIndex -> null
+                tb.pageIndex > pageIndex -> tb.copy(pageIndex = tb.pageIndex - 1, y = tb.y - stride)
+                else -> tb
+            }
+        }
+
+        images = images.mapNotNull { img ->
+            when {
+                img.pageIndex == pageIndex -> null
+                img.pageIndex > pageIndex -> img.copy(pageIndex = img.pageIndex - 1, y = img.y - stride)
+                else -> img
+            }
+        }
+
+        rebuildSpatialStateAfterPageChange(remainingStrokes)
+        scrollToPage(pageIndex.coerceAtMost(pages.lastIndex))
+        return true
+    }
+
+    private fun rebuildSpatialStateAfterPageChange(updatedStrokes: List<NoteStroke>) {
+        discardPendingShape()
+        clearLaserStrokes()
+        clearSelection()
+        selectedImageId = null
+        spatialIndex.clear()
+        spatialIndex.insertAll(updatedStrokes)
+        tileCache.clearAll()
+        undoRedoManager.clear()
+        syncCounters(notifyMutation = true)
+    }
+
+    // --- GALERİ GÖRSEL EKLEME, TAŞIMA, BOYUTLANDIRMA VE SİLME ---
+
+    fun addImageBlock(
+        filePath: String,
+        aspectRatio: Float,
+        targetPageIndex: Int = getCurrentVisiblePageIndex()
+    ) {
+        val safePage = targetPageIndex.coerceIn(0, (pages.size - 1).coerceAtLeast(0))
+        val pageTop = NotePage.pageTopY(safePage)
+        val width = 380f
+        val height = (width / aspectRatio.coerceIn(0.25f, 4.0f)).coerceIn(100f, 760f)
+        val x = (NotePage.DEFAULT_PAGE_WIDTH - width) * 0.5f
+        val y = pageTop + ((NotePage.DEFAULT_PAGE_HEIGHT - height) * 0.35f)
+
+        val created = NoteImageBlock(
+            id = UUID.randomUUID().toString(),
+            pageIndex = safePage,
+            x = x,
+            y = y,
+            width = width,
+            height = height,
+            filePath = filePath
+        )
+        images = images + created
+        selectedImageId = created.id
+        undoRedoManager.record(EditorCommand.UpsertImageBlock(previous = null, updated = created))
+        syncCounters(notifyMutation = true)
+    }
+
+    fun selectImage(imageId: String?) {
+        if (selectedImageId != imageId) {
+            selectedImageId = imageId
+            renderRevision++
+        }
+    }
+
+    fun getSelectedImage(): NoteImageBlock? =
+        selectedImageId?.let { id -> images.firstOrNull { it.id == id } }
+
+    fun translateSelectedImage(
+        dx: Float,
+        dy: Float,
+        recordUndo: Boolean = false,
+        originalSnapshot: NoteImageBlock? = null
+    ) {
+        val current = getSelectedImage() ?: return
+        val topY = NotePage.pageTopY(current.pageIndex)
+        val bottomY = topY + NotePage.DEFAULT_PAGE_HEIGHT
+        val nextX = (current.x + dx).coerceIn(8f, (NotePage.DEFAULT_PAGE_WIDTH - current.width - 8f).coerceAtLeast(8f))
+        val nextY = (current.y + dy).coerceIn(topY + 8f, (bottomY - current.height - 8f).coerceAtLeast(topY + 8f))
+        val updated = current.copy(x = nextX, y = nextY)
+
+        images = images.map { if (it.id == updated.id) updated else it }
+        if (recordUndo && originalSnapshot != null && originalSnapshot != updated) {
+            undoRedoManager.record(EditorCommand.UpsertImageBlock(previous = originalSnapshot, updated = updated))
+            syncCounters(notifyMutation = true)
+        } else {
+            syncCounters(notifyMutation = false)
+        }
+    }
+
+    fun scaleSelectedImage(
+        factor: Float,
+        recordUndo: Boolean = true,
+        originalSnapshot: NoteImageBlock? = null
+    ) {
+        val current = getSelectedImage() ?: return
+        val ratio = (current.width / current.height.coerceAtLeast(1f)).coerceIn(0.2f, 5f)
+        val maxPageW = NotePage.DEFAULT_PAGE_WIDTH - 24f
+        val maxPageH = NotePage.DEFAULT_PAGE_HEIGHT - 24f
+
+        var newW = (current.width * factor).coerceIn(90f, maxPageW)
+        var newH = newW / ratio
+        if (newH > maxPageH) {
+            newH = maxPageH
+            newW = (newH * ratio).coerceIn(90f, maxPageW)
+        }
+
+        val topY = NotePage.pageTopY(current.pageIndex)
+        val bottomY = topY + NotePage.DEFAULT_PAGE_HEIGHT
+        val cx = current.x + current.width * 0.5f
+        val cy = current.y + current.height * 0.5f
+        val nextX = (cx - newW * 0.5f).coerceIn(8f, (NotePage.DEFAULT_PAGE_WIDTH - newW - 8f).coerceAtLeast(8f))
+        val nextY = (cy - newH * 0.5f).coerceIn(topY + 8f, (bottomY - newH - 8f).coerceAtLeast(topY + 8f))
+
+        val updated = current.copy(x = nextX, y = nextY, width = newW, height = newH)
+        images = images.map { if (it.id == updated.id) updated else it }
+        if (recordUndo) {
+            undoRedoManager.record(
+                EditorCommand.UpsertImageBlock(
+                    previous = originalSnapshot ?: current,
+                    updated = updated
+                )
+            )
+            syncCounters(notifyMutation = true)
+        } else {
+            syncCounters(notifyMutation = false)
+        }
+    }
+
+    fun deleteSelectedImage() {
+        val current = getSelectedImage() ?: return
+        images = images.filterNot { it.id == current.id }
+        selectedImageId = null
+        undoRedoManager.record(EditorCommand.UpsertImageBlock(previous = current, updated = null))
         syncCounters(notifyMutation = true)
     }
 
@@ -846,6 +1250,18 @@ class NoteEditorController(
                     else -> textBlocks
                 }
             }
+            is EditorCommand.UpsertImageBlock -> {
+                images = when {
+                    cmd.previous == null && cmd.updated != null ->
+                        images.filterNot { it.id == cmd.updated.id }
+                    cmd.previous != null && cmd.updated == null ->
+                        images + cmd.previous
+                    cmd.previous != null && cmd.updated != null ->
+                        images.map { if (it.id == cmd.previous.id) cmd.previous else it }
+                    else -> images
+                }
+                selectedImageId = null
+            }
         }
         syncCounters(notifyMutation = true)
     }
@@ -888,6 +1304,18 @@ class NoteEditorController(
                         textBlocks.map { if (it.id == cmd.updated.id) cmd.updated else it }
                     else -> textBlocks
                 }
+            }
+            is EditorCommand.UpsertImageBlock -> {
+                images = when {
+                    cmd.previous == null && cmd.updated != null ->
+                        images + cmd.updated
+                    cmd.previous != null && cmd.updated == null ->
+                        images.filterNot { it.id == cmd.previous.id }
+                    cmd.previous != null && cmd.updated != null ->
+                        images.map { if (it.id == cmd.updated.id) cmd.updated else it }
+                    else -> images
+                }
+                selectedImageId = null
             }
         }
         syncCounters(notifyMutation = true)

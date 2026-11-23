@@ -1,6 +1,10 @@
 package com.tabletnotes.app.feature.editor.ui
 
+import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -51,18 +55,25 @@ import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.GridOn
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.IosShare
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.ViewAgenda
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -102,6 +113,8 @@ import com.tabletnotes.app.domain.model.DrawingToolType
 import com.tabletnotes.app.domain.model.EraserMode
 import com.tabletnotes.app.domain.model.PaperColor
 import com.tabletnotes.app.domain.model.PaperTemplate
+import com.tabletnotes.app.domain.model.StylusButtonAction
+import com.tabletnotes.app.domain.model.TagNormalizer
 import com.tabletnotes.app.domain.repository.NoteSummary
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -133,11 +146,43 @@ fun NoteEditorScreen(
     onCycleTheme: () -> Unit,
     onNavigateBack: () -> Unit,
     onShareNoteRequest: (() -> Unit)? = null,
+    isPortabilityBusy: Boolean = false,
+    noticeMessageRes: Int? = null,
+    onDismissNotice: () -> Unit = {},
+    onStylusSideButtonActionChange: (StylusButtonAction) -> Unit = { controller.stylusSideButtonAction = it },
+    onImportGalleryImage: (Uri) -> Unit = {},
+    onImportPdfPages: (Uri) -> Unit = {},
+    onExportPdf: (Uri) -> Unit = {},
+    onExportPng: (Uri) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val palette = TabletNotesTheme.palette
 
     BackHandler(onBack = onNavigateBack)
+
+    val pickGalleryImageLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) onImportGalleryImage(uri)
+    }
+
+    val importPdfPagesLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) onImportPdfPages(uri)
+    }
+
+    val exportPdfLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/pdf")
+    ) { uri ->
+        if (uri != null) onExportPdf(uri)
+    }
+
+    val exportPngLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("image/png")
+    ) { uri ->
+        if (uri != null) onExportPng(uri)
+    }
 
     var showTextDialog by rememberSaveable { mutableStateOf(false) }
     var editingTextBlockId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -148,6 +193,7 @@ fun NoteEditorScreen(
     var showTitleDialog by rememberSaveable { mutableStateOf(false) }
     var pendingTitleValue by rememberSaveable { mutableStateOf(controller.noteTitle) }
     var pendingCourseValue by rememberSaveable { mutableStateOf(controller.courseName) }
+    var newTagInput by rememberSaveable { mutableStateOf("") }
 
     var showSubNotesMenu by remember { mutableStateOf(false) }
     var showPenPopover by remember { mutableStateOf(false) }
@@ -155,6 +201,8 @@ fun NoteEditorScreen(
     var showEraserMenu by remember { mutableStateOf(false) }
     var showColorCustomDialog by remember { mutableStateOf(false) }
     var showPaperSettingsDialog by remember { mutableStateOf(false) }
+    var showPageManagerDialog by rememberSaveable { mutableStateOf(false) }
+    var showStylusButtonDialog by rememberSaveable { mutableStateOf(false) }
     var showMoreMenu by remember { mutableStateOf(false) }
     var showJsonDebugDialog by rememberSaveable { mutableStateOf(false) }
     var jsonDebugText by remember { mutableStateOf("") }
@@ -298,11 +346,54 @@ fun NoteEditorScreen(
                         }
                     )
                     DropdownMenuItem(
+                        text = { Text(stringResource(R.string.editor_page_manager_btn)) },
+                        leadingIcon = { Icon(Icons.Default.ViewAgenda, contentDescription = null) },
+                        onClick = {
+                            showMoreMenu = false
+                            showPageManagerDialog = true
+                        }
+                    )
+                    DropdownMenuItem(
                         text = { Text(stringResource(R.string.editor_add_page)) },
                         leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) },
                         onClick = {
                             showMoreMenu = false
                             controller.addPage(scrollToNewPage = true)
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.editor_import_pdf_pages)) },
+                        leadingIcon = { Icon(Icons.Default.PictureAsPdf, contentDescription = null) },
+                        onClick = {
+                            showMoreMenu = false
+                            importPdfPagesLauncher.launch(arrayOf("application/pdf"))
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.editor_export_pdf)) },
+                        leadingIcon = { Icon(Icons.Default.IosShare, contentDescription = null) },
+                        onClick = {
+                            showMoreMenu = false
+                            val safeName = controller.noteTitle.replace(Regex("[^\\p{L}\\p{N}_-]"), "_").ifBlank { "not" }
+                            exportPdfLauncher.launch("$safeName.pdf")
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.editor_export_png)) },
+                        leadingIcon = { Icon(Icons.Default.Image, contentDescription = null) },
+                        onClick = {
+                            showMoreMenu = false
+                            val safeName = controller.noteTitle.replace(Regex("[^\\p{L}\\p{N}_-]"), "_").ifBlank { "not" }
+                            val pageNum = controller.getCurrentVisiblePageIndex() + 1
+                            exportPngLauncher.launch("${safeName}_s$pageNum.png")
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.editor_stylus_button_menu)) },
+                        leadingIcon = { Icon(Icons.Default.Draw, contentDescription = null) },
+                        onClick = {
+                            showMoreMenu = false
+                            showStylusButtonDialog = true
                         }
                     )
                     DropdownMenuItem(
@@ -380,7 +471,9 @@ fun NoteEditorScreen(
                             text = {
                                 Column {
                                     Text(
-                                        text = summary.title,
+                                        text = summary.title +
+                                            (if (summary.isPinned) " 📌" else "") +
+                                            (if (summary.isFavorite) " ★" else ""),
                                         style = MaterialTheme.typography.bodyMedium.copy(
                                             fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium
                                         ),
@@ -388,10 +481,17 @@ fun NoteEditorScreen(
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
+                                    val tagSuffix = if (summary.tags.isNotEmpty()) {
+                                        " • " + summary.tags.take(2).joinToString(" ") { "#$it" }
+                                    } else {
+                                        ""
+                                    }
                                     Text(
-                                        text = "${summary.pageCount} sayfa",
+                                        text = "${summary.pageCount} sayfa$tagSuffix",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = palette.textMuted
+                                        color = palette.textMuted,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             },
@@ -714,6 +814,26 @@ fun NoteEditorScreen(
                                 onClick = { controller.selectTool(DrawingToolType.TEXT) }
                             )
 
+                            // 8) Galeriden Görsel Ekle (Fotoğraf / Ekran Görüntüsü)
+                            CompactToolbarIconButton(
+                                icon = Icons.Default.Image,
+                                contentDescription = stringResource(R.string.editor_tool_gallery_image),
+                                selected = false,
+                                onClick = {
+                                    pickGalleryImageLauncher.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                    )
+                                }
+                            )
+
+                            // 9) Sayfa Paneli (Sayfaları Yönet)
+                            CompactToolbarIconButton(
+                                icon = Icons.Default.ViewAgenda,
+                                contentDescription = stringResource(R.string.editor_page_manager_btn),
+                                selected = false,
+                                onClick = { showPageManagerDialog = true }
+                            )
+
                             Spacer(modifier = Modifier.width(4.dp))
 
                             // 8) 3 Hızlı Erişim Renk Tuşu
@@ -889,7 +1009,97 @@ fun NoteEditorScreen(
             }
         }
 
-        // 3. ANA DÜŞÜK GECİKMELİ KAĞIT TUVALİ + SAĞ ÜST YAKINLIK YÜZDESİ
+        // Seçili Görsel Eylem Çubuğu
+        AnimatedVisibility(visible = !controller.isFocusMode && controller.selectedImageId != null) {
+            Surface(
+                shape = CircleShape,
+                color = palette.surfaceElevated,
+                border = BorderStroke(1.dp, palette.primaryAccent),
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                        .horizontalScroll(rememberScrollState()),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.editor_image_selected_label),
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                        color = palette.primaryAccent
+                    )
+                    TextButton(
+                        onClick = { controller.scaleSelectedImage(1.18f) },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Icon(Icons.Default.ZoomIn, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(stringResource(R.string.editor_selection_scale_up), style = MaterialTheme.typography.labelMedium)
+                    }
+                    TextButton(
+                        onClick = { controller.scaleSelectedImage(0.84f) },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Icon(Icons.Default.ZoomOut, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(stringResource(R.string.editor_selection_scale_down), style = MaterialTheme.typography.labelMedium)
+                    }
+                    TextButton(
+                        onClick = { controller.deleteSelectedImage() },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.DeleteOutline,
+                            contentDescription = null,
+                            tint = palette.secondaryAccent,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            stringResource(R.string.editor_selection_delete),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = palette.secondaryAccent
+                        )
+                    }
+                    TextButton(
+                        onClick = { controller.selectImage(null) },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Text(stringResource(R.string.editor_image_confirm), style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+        }
+
+        if (noticeMessageRes != null) {
+            Surface(
+                color = palette.surfaceElevated,
+                shape = CircleShape,
+                border = BorderStroke(1.dp, palette.primaryAccent),
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = stringResource(noticeMessageRes),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = palette.textPrimary
+                    )
+                    TextButton(
+                        onClick = onDismissNotice,
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                    ) {
+                        Text(stringResource(R.string.editor_json_debug_close), style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+        }
+
+        // 3. ANA DÜŞÜK GECİKMELİ KAĞIT TUVALİ + SAĞ ÜST SAYFA & YAKINLIK YÜZDESİ
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -920,22 +1130,79 @@ fun NoteEditorScreen(
                 }
             )
 
-            // Sayfanın Sağ Üstünde Yüzdelik Yakınlaştırma Göstergesi (Dokunulduğunda %100'e sıfırlar)
-            Surface(
-                onClick = { controller.resetZoomAndPan() },
-                color = palette.surfaceElevated.copy(alpha = 0.88f),
-                shape = CircleShape,
-                border = BorderStroke(1.dp, palette.borderSubtle),
+            // Sol Üst: Kalem Yan Tuşu Aktif Göstergesi veya İçe/Dışa Aktarma Yükleniyor Rozeti
+            if (controller.isStylusSideButtonHeld || isPortabilityBusy) {
+                Surface(
+                    color = palette.primaryAccent.copy(alpha = 0.92f),
+                    shape = CircleShape,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (isPortabilityBusy) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                color = palette.onPrimaryAccent,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Text(
+                                text = stringResource(
+                                    R.string.editor_stylus_held_badge_fmt,
+                                    stylusActionLabel(controller.stylusSideButtonAction)
+                                ),
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = palette.onPrimaryAccent
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Sayfanın Sağ Üstünde Sayfa Göstergesi ("Sayfa 1 / 2") + Yüzdelik Yakınlaştırma Göstergesi
+            Row(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(14.dp)
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(
-                    text = "%${(controller.zoom * 100).roundToInt()}",
-                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = palette.textPrimary,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                )
+                Surface(
+                    onClick = { showPageManagerDialog = true },
+                    color = palette.surfaceElevated.copy(alpha = 0.88f),
+                    shape = CircleShape,
+                    border = BorderStroke(1.dp, palette.borderSubtle)
+                ) {
+                    Text(
+                        text = stringResource(
+                            R.string.editor_page_badge,
+                            controller.getCurrentVisiblePageIndex() + 1,
+                            controller.pages.size.coerceAtLeast(1)
+                        ),
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = palette.textPrimary,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                    )
+                }
+
+                Surface(
+                    onClick = { controller.resetZoomAndPan() },
+                    color = palette.surfaceElevated.copy(alpha = 0.88f),
+                    shape = CircleShape,
+                    border = BorderStroke(1.dp, palette.borderSubtle)
+                ) {
+                    Text(
+                        text = "%${(controller.zoom * 100).roundToInt()}",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = palette.textPrimary,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                    )
+                }
             }
 
             if (showDevHud) {
@@ -966,13 +1233,19 @@ fun NoteEditorScreen(
     // --- DİYALOGLAR (Tamamı 24dp yuvarlatılmış dikdörtgen formunda!) ---
 
     if (showTitleDialog) {
+        val suggestedTags = listOf("vize", "final", "ödev", "özet")
         AlertDialog(
             onDismissRequest = { showTitleDialog = false },
             shape = RoundedCornerShape(24.dp),
             containerColor = palette.surfaceElevated,
             title = { Text(stringResource(R.string.editor_edit_title_dialog)) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(
+                    modifier = Modifier
+                        .widthIn(min = 380.dp, max = 500.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
                     OutlinedTextField(
                         value = pendingCourseValue,
                         onValueChange = { pendingCourseValue = it },
@@ -987,6 +1260,151 @@ fun NoteEditorScreen(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Surface(
+                            onClick = { controller.toggleFavorite() },
+                            shape = CircleShape,
+                            color = if (controller.isFavorite) palette.primaryAccent.copy(alpha = 0.16f) else palette.surface,
+                            border = BorderStroke(1.dp, if (controller.isFavorite) palette.primaryAccent else palette.borderSubtle),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = if (controller.isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
+                                    contentDescription = null,
+                                    tint = if (controller.isFavorite) palette.primaryAccent else palette.textSecondary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = stringResource(R.string.editor_meta_favorite),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = palette.textPrimary
+                                )
+                            }
+                        }
+
+                        Surface(
+                            onClick = { controller.togglePinned() },
+                            shape = CircleShape,
+                            color = if (controller.isPinned) palette.primaryAccent.copy(alpha = 0.16f) else palette.surface,
+                            border = BorderStroke(1.dp, if (controller.isPinned) palette.primaryAccent else palette.borderSubtle),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PushPin,
+                                    contentDescription = null,
+                                    tint = if (controller.isPinned) palette.primaryAccent else palette.textSecondary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = stringResource(R.string.editor_meta_pinned),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = palette.textPrimary
+                                )
+                            }
+                        }
+                    }
+
+                    HorizontalDivider()
+
+                    Text(
+                        text = stringResource(R.string.editor_meta_tags_label),
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                        color = palette.textPrimary
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        suggestedTags.forEach { preset ->
+                            val active = preset in controller.tags
+                            Surface(
+                                onClick = {
+                                    if (active) controller.removeTag(preset) else controller.addTag(preset)
+                                },
+                                shape = CircleShape,
+                                color = if (active) palette.primaryAccent else palette.surface,
+                                border = BorderStroke(1.dp, if (active) palette.primaryAccent else palette.borderSubtle)
+                            ) {
+                                Text(
+                                    text = "#$preset",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (active) palette.onPrimaryAccent else palette.textPrimary,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    if (controller.tags.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            controller.tags.forEach { tag ->
+                                Surface(
+                                    onClick = { controller.removeTag(tag) },
+                                    shape = CircleShape,
+                                    color = palette.primaryAccent.copy(alpha = 0.14f),
+                                    border = BorderStroke(1.dp, palette.primaryAccent)
+                                ) {
+                                    Text(
+                                        text = "#$tag  ×",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = palette.primaryAccent,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = newTagInput,
+                            onValueChange = { newTagInput = it },
+                            label = { Text(stringResource(R.string.editor_meta_tag_hint)) },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Button(
+                            onClick = {
+                                val normalized = TagNormalizer.normalize(newTagInput)
+                                if (normalized.isNotEmpty()) {
+                                    controller.addTag(normalized)
+                                    newTagInput = ""
+                                }
+                            },
+                            enabled = TagNormalizer.normalize(newTagInput).isNotEmpty(),
+                            shape = CircleShape
+                        ) {
+                            Text(stringResource(R.string.editor_meta_tag_add))
+                        }
+                    }
                 }
             },
             confirmButton = {
@@ -997,7 +1415,8 @@ fun NoteEditorScreen(
                             newCourse = pendingCourseValue
                         )
                         showTitleDialog = false
-                    }
+                    },
+                    shape = CircleShape
                 ) {
                     Text(stringResource(R.string.editor_text_dialog_save))
                 }
@@ -1005,6 +1424,50 @@ fun NoteEditorScreen(
             dismissButton = {
                 TextButton(onClick = { showTitleDialog = false }) {
                     Text(stringResource(R.string.editor_text_dialog_cancel))
+                }
+            }
+        )
+    }
+
+    if (showPageManagerDialog) {
+        PageManagerDialog(
+            documentSnapshot = controller.toNoteDocument(),
+            currentVisiblePageIndex = controller.getCurrentVisiblePageIndex(),
+            onJumpToPage = { idx -> controller.scrollToPage(idx) },
+            onMovePageUp = { idx -> controller.movePage(idx, idx - 1) },
+            onMovePageDown = { idx -> controller.movePage(idx, idx + 1) },
+            onDuplicatePage = { idx -> controller.duplicatePage(idx) },
+            onInsertBlankAfter = { idx -> controller.insertBlankPageAfter(idx) },
+            onDeletePage = { idx -> controller.deletePage(idx) },
+            onAddBlankAtEnd = { controller.addPage(scrollToNewPage = true) },
+            onImportPdfPages = { importPdfPagesLauncher.launch(arrayOf("application/pdf")) },
+            onDismiss = { showPageManagerDialog = false }
+        )
+    }
+
+    if (showStylusButtonDialog) {
+        AlertDialog(
+            onDismissRequest = { showStylusButtonDialog = false },
+            shape = RoundedCornerShape(24.dp),
+            containerColor = palette.surfaceElevated,
+            title = { Text(stringResource(R.string.editor_stylus_button_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StylusButtonAction.entries.forEach { action ->
+                        EraserOptionRow(
+                            label = stylusActionLabel(action),
+                            selected = controller.stylusSideButtonAction == action,
+                            onClick = {
+                                onStylusSideButtonActionChange(action)
+                                showStylusButtonDialog = false
+                            }
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showStylusButtonDialog = false }) {
+                    Text(stringResource(R.string.editor_json_debug_close))
                 }
             }
         )
@@ -1412,6 +1875,14 @@ private fun penFullNameFor(tool: DrawingToolType): String = when (tool) {
     DrawingToolType.MARKER -> stringResource(R.string.editor_pen_marker)
     DrawingToolType.WATERCOLOR -> stringResource(R.string.editor_pen_watercolor)
     else -> stringResource(R.string.editor_tool_pen)
+}
+
+@Composable
+private fun stylusActionLabel(action: StylusButtonAction): String = when (action) {
+    StylusButtonAction.ERASER -> stringResource(R.string.editor_stylus_action_eraser)
+    StylusButtonAction.LASSO_SELECT -> stringResource(R.string.editor_stylus_action_lasso)
+    StylusButtonAction.LASER_POINTER -> stringResource(R.string.editor_stylus_action_laser)
+    StylusButtonAction.DISABLED -> stringResource(R.string.editor_stylus_action_disabled)
 }
 
 internal fun formatFileSize(bytes: Long): String {

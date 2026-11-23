@@ -449,3 +449,13 @@ Her adım tek tek uygulanıp sizin onayınızla bir sonrakine geçilecektir:
 - **M5 — Çalışma Grupları, Roller ve Grup Ayarları (Tamamlandı):** Arkadaşlardan grup kurma (max 50 üye), `owner/admin/member` rolleri, rol yönetimi, "kimler mesaj atabilir", gruptan ayrılma, grubu silme (owner), yerel sessize alma (mute) `GroupDialogs` ile bağlandı.
 - **M6 — Hesap Silme, Ayarlar Ekranı, Hata ve Çevrimdışı İyileştirmeleri (Tamamlandı):** Yeniden doğrulama (*re-authenticate*) ile hesap silme + en iyi çaba Firestore temizliği, Ayarlar/Profil ekranında "Test Sürümü — E2EE yok" uyarısı, internet yokken önbellek banner'ı, Türkçe/İngilizce dostça hata mesajları eklendi.
 - **M7 — Güvenlik Kuralları, Emulator Testleri, Tablet Düzeni ve Son İnceleme (Tamamlandı):** `firestore.rules`, `firestore.indexes.json`, `rules-tests/firestore.rules.test.js` (`@firebase/rules-unit-testing`) test paketi, yatay/dikey tablet düzeni doğrulandı ve son APK derlendi.
+
+---
+
+## 13. Sürüm v2.1.0 — Tablet Not Kolaylıkları (Tamamlandı)
+- **PDF İçe Aktarma & PDF/PNG Dışa Aktarma:** `NotePdfPortability` ile `PdfRenderer` üzerinden PDF sayfalarını 3:4 oranlı not sayfaları olarak içe aktarma, `PdfDocument` ile vektör çizimleri + görselleri + metinleri gerçek PDF'e aktarma ve aktif sayfayı `1800x2400` PNG olarak kaydetme eklendi.
+- **Sayfaya Galeri Görseli Ekleme:** Android Photo Picker (`PickVisualMedia`) ile fotoğraf/ekran görüntüsü ekleyip taşıma, köşeden boyutlandırma, üzerine çizim yapma ve Undo/Redo desteği eklendi.
+- **30 Günlük Çöp Kutusu (Geri Dönüşüm Kutusu):** Room v4 (`MIGRATION_3_4`) ile silinen ders klasörleri ve alt notlar 30 gün boyunca Çöp Kutusu'nda tutulur, tek tıkla geri yüklenebilir veya kalıcı silinebilir.
+- **Gelişmiş Sayfa Paneli (`PageManagerDialog`):** Canlı sayfa küçük resimleriyle sayfa sırası değiştirme, çoğaltma, araya boş sayfa ekleme, tek sayfa silme ve PDF ekleme eklendi.
+- **Favoriler, Sabitleme & `#Etiketler`:** Ders klasörlerini sabitleme, notları favorilere ekleme / üste sabitleme, `#vize`, `#ödev` gibi etiketlerle ana ekrandan tek dokunuşla filtreleme eklendi.
+- **Kalem (Stylus) Yan Tuşu Kısayolu:** S-Pen / Stylus gövde tuşuna basılı tutunca geçici Silgi, Kare Seçim veya Lazer İşaretçi aracına geçiş ve ayarı tercihlere kaydetme eklendi.

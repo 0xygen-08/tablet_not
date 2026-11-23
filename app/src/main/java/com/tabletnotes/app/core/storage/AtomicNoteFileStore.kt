@@ -22,10 +22,24 @@ class AtomicNoteFileStore(
 ) {
     private val notesDir = File(rootDir, "notes").apply { mkdirs() }
     private val thumbnailsDir = File(rootDir, "thumbnails").apply { mkdirs() }
+    private val assetsDir = File(rootDir, "note_assets").apply { mkdirs() }
 
     fun getNoteFile(noteId: String): File = File(notesDir, "${sanitizeId(noteId)}.tnote")
 
     fun getThumbnailFile(noteId: String): File = File(thumbnailsDir, "${sanitizeId(noteId)}.png")
+
+    fun getAssetFile(noteId: String, assetId: String, ext: String = "jpg"): File {
+        val noteAssetDir = File(assetsDir, sanitizeId(noteId)).apply { mkdirs() }
+        val cleanExt = ext.replace(Regex("[^a-zA-Z0-9]"), "").ifBlank { "jpg" }
+        return File(noteAssetDir, "${sanitizeId(assetId)}.$cleanExt")
+    }
+
+    @Synchronized
+    fun saveImageAsset(noteId: String, assetId: String, data: ByteArray, ext: String = "jpg"): File {
+        val targetFile = getAssetFile(noteId, assetId, ext)
+        writeBytesAtomically(targetFile, data)
+        return targetFile
+    }
 
     /**
      * Verilen bayt dizisini önce `<noteId>.tnote.tmp` dosyasına yazar, diske senkronize eder (`fd.sync()`)
@@ -59,6 +73,7 @@ class AtomicNoteFileStore(
         File(notesDir, "$safeId.tnote.tmp").delete()
         File(thumbnailsDir, "$safeId.png").delete()
         File(thumbnailsDir, "$safeId.png.tmp").delete()
+        File(assetsDir, safeId).deleteRecursively()
     }
 
     private fun writeBytesAtomically(targetFile: File, data: ByteArray) {

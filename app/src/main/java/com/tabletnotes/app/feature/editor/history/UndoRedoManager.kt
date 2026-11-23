@@ -1,5 +1,6 @@
 package com.tabletnotes.app.feature.editor.history
 
+import com.tabletnotes.app.domain.model.NoteImageBlock
 import com.tabletnotes.app.domain.model.NoteStroke
 import com.tabletnotes.app.domain.model.TextBlock
 
@@ -12,6 +13,7 @@ sealed interface EditorCommand {
     data class EraseStrokes(val erasedStrokes: List<NoteStroke>) : EditorCommand
     data class ReplaceStrokes(val before: List<NoteStroke>, val after: List<NoteStroke>) : EditorCommand
     data class UpsertTextBlock(val previous: TextBlock?, val updated: TextBlock?) : EditorCommand
+    data class UpsertImageBlock(val previous: NoteImageBlock?, val updated: NoteImageBlock?) : EditorCommand
 }
 
 /**

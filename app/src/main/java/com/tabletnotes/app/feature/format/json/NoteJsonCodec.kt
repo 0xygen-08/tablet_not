@@ -24,6 +24,10 @@ object NoteJsonCodec {
         append("  \"courseName\": \"${escapeJson(document.courseName)}\",\n")
         append("  \"paperColor\": \"${document.paperColor.name}\",\n")
         append("  \"paperTemplate\": \"${document.paperTemplate.name}\",\n")
+        append("  \"isFavorite\": ${document.isFavorite},\n")
+        append("  \"isPinned\": ${document.isPinned},\n")
+        append("  \"tags\": [${document.tags.joinToString(", ") { "\"${escapeJson(it)}\"" }}],\n")
+        append("  \"imageCount\": ${document.images.size},\n")
         append("  \"createdAtMillis\": ${document.createdAtMillis},\n")
         append("  \"updatedAtMillis\": ${document.updatedAtMillis},\n")
 
